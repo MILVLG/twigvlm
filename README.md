@@ -2,6 +2,10 @@
 
 [[📖 Technical report]()\]&nbsp;&nbsp;&nbsp;&nbsp;[[🤗Huggingface]()\]
 
+<p align="center" width="100%">
+<img src="./assets/fig1.png" alt="Stanford-Alpaca" style="width: 100%; min-width: 300px; display: block; margin: auto;">
+</p>
+
 ## Table of Contents
 
 - [twigvlm](#twigvlm)
@@ -102,20 +106,21 @@ cont = model.generate(
 )
 text_outputs = tokenizer.batch_decode(cont.predicted_tokens, skip_special_tokens=True)[0]
 ```
-| Models | GQA |MMB  | SQA(IMG) | TextVQA | POPE |  MME | MMB  |MM-Vet|
-|:--------:|:----:|:----:|:-------------:|:--------:|:-----:|:----:|:-------:|:-------:|:-------:|
-| [LLaVA-v1.5-lora](https://github.com/haotian-liu/LLaVA) (7B) |79.10 | 63.00 |47.80 |  68.40 |58.20| 86.40 | 1476.9 | 66.10  |30.2|
-| [TinyGPT-V](https://github.com/DLYuanGod/TinyGPT-V) (3B) | - | 33.60  | 24.80  |    -   |    -  | -| - | -  |-|
-| [LLaVA-Phi](https://github.com/zhuyiche/llava-phi) (3B) | 71.40  | - | 35.90 |    68.40   |    48.60  | 85.00 | 1335.1 | 59.80 |28.9|
-| [MobileVLM](https://github.com/Meituan-AutoML/MobileVLM) (3B) | - | 59.00  | - |    61.00   |    47.50   | 84.90 | 1288.9 | 59.60  |-|
-| [MC-LLaVA](https://huggingface.co/visheratin/MC-LLaVA-3b) (3B) | 64.24 | 49.60  | 24.88 |    -   |    38.59   | 80.59 | - | -  |-|
-| [**TwigVLM**](https://huggingface.co/MILVLG/imp-v1-3b) | 79.45 | 58.55 | 50.09 |69.96| 59.38 | 88.02| 1434.0 | 66.49 |33.1|
+
+| Models | GQA | MMBench | MME  | TextVQA | SQA(IMG) | VQAv2 |  POPE | MMMU  | MM-Vet | Avg |
+|:--------:|:----:|:----:|:--------:|:--------:|:-----:|:----:|:-------:|:-------:|:------:|:---:|
+| [SparseVLM]() | 52.7 | 56.2 | 1505 | 51.8 | 62.2 | 68.2 | 75.1 | 32.7 | 23.3 | 85.6% |
+| [MustDrop]() | 53.1 |	60 | 1612 | 54.2 | 63.4 | 69.3 | 68	| - | - | 88.1% |
+| [VisionZip]() | 55.1 | 60.1 |	1690 | 55.5	| 69 | 72.4 | 77 |	36.2 | 31.7	| 94.5% |
+| [VisionZip$\ddag$]() | 57	| 61.5 | 1756 |	56 | 68.8 |	74.2 | 80.9 | 35.6 | 30.2 |	95.6% |
+| [**TwigVLM**]() | 58.8 | 60.4 | 1760 | 55.8 | 70 | 75.6 | 82.7 | 35.9 | 31.1 | 96.8% |
+
 
 ## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](https://www.apache.org/licenses/LICENSE-2.0) file for details.
 
 ## About us
-This project is maintained by the [MILVLG](https://github.com/MILVLG)@Hangzhou Dianzi University (HDU) led by Prof. Zhou Yu and Jun Yu, and is mainly developed by Zhenwei Shao and Xuecheng Ouyang. We hope our model may serve as a strong baseline to inspire future research on MSLM, as well as its derivative applications on mobile devices and robots. 
+This project is maintained by the [MILVLG](https://github.com/MILVLG)@Hangzhou Dianzi University (HDU).  
 
 ## Citation
 
