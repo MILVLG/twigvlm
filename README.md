@@ -1,13 +1,15 @@
-# twigvlm
+# TwigVLM
 
 [[📖 Technical report]()\]&nbsp;&nbsp;&nbsp;&nbsp;[[🤗Huggingface]()\]
 
+This repository contains the official training/evaluation code of the TwigVLM, which is a simple and general architecture by “growing” a lightweight twig on top of an early layer of the base VLM.
+
+Compared with existing VLMacceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding(SSD) strategy.
+
 ## Table of Contents
 
-- [twigvlm](#twigvlm)
-  - [Table of Contents](#table-of-contents)
-  - [Highlights](#highlights)
   - [News](#news)
+  - [Highlights](#highlights)
   - [Demo](#demo)
   - [Prerequisites](#prerequisites)
   - [Model-zoo](#model-zoo)
@@ -16,6 +18,9 @@
   - [License](#license)
   - [About us](#about-us)
   - [Citation](#citation)
+  
+## News
+- March 15, 2025: Training and evaluation codes of the `TwigVLM` model are released.
 
 ## Highlights
 <p align="center" width="80%">
@@ -28,9 +33,6 @@
    
 3. Moreover, the training time is considerably more efficient, being only one-sixth of the original LLaVA model's finetune duration.
 4. By implementing the KVCache reuse mechanism, we have effectively eliminated computational redundancy, thereby enhancing overall efficiency.
-
-## News
-- March 15, 2025: Training and evaluation codes of the `TwigVLM` model are released.
   
 ## Demo
 
@@ -110,15 +112,18 @@ cont = model.generate(
     twigvlm_config=twigvlm_config
 )
 text_outputs = tokenizer.batch_decode(cont.predicted_tokens, skip_special_tokens=True)[0]
+
 ```
+
+Using our provided model, you can reproduce the following results. 
 
 | Models | GQA | MMBench | MME  | TextVQA | SQA(IMG) | VQAv2 |  POPE | MMMU  | MM-Vet | Avg |
 |:--------:|:----:|:----:|:--------:|:--------:|:-----:|:----:|:-------:|:-------:|:------:|:---:|
 | [SparseVLM]() | 52.7 | 56.2 | 1505 | 51.8 | 62.2 | 68.2 | 75.1 | 32.7 | 23.3 | 85.6% |
 | [MustDrop]() | 53.1 |	60 | 1612 | 54.2 | 63.4 | 69.3 | 68	| - | - | 88.1% |
-| [VisionZip]() | 55.1 | 60.1 |	1690 | 55.5	| 69 | 72.4 | 77 |	36.2 | 31.7	| 94.5% |
-| [VisionZip$\ddag$]() | 57	| 61.5 | 1756 |	56 | 68.8 |	74.2 | 80.9 | 35.6 | 30.2 |	95.6% |
-| [**TwigVLM**]() | 58.8 | 60.4 | 1760 | 55.8 | 70 | 75.6 | 82.7 | 35.9 | 31.1 | 96.8% |
+| [VisionZip]() | 55.1 | 60.1 |	1690 | 55.5	| 69 | 72.4 | 77 |	**36.2** | **31.7**	| 94.5% |
+| [VisionZip$\ddag$]() | 57	| **61.5** | 1756 |	**56** | 68.8 |	74.2 | 80.9 | 35.6 | 30.2 |	95.6% |
+| [**TwigVLM**]() | **58.8** | 60.4 | **1760** | 55.8 | **70** | **75.6** | **82.7** | 35.9 | 31.1 | **96.8%** |
 
 
 ## License
