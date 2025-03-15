@@ -2,10 +2,6 @@
 
 [[📖 Technical report]()\]&nbsp;&nbsp;&nbsp;&nbsp;[[🤗Huggingface]()\]
 
-<p align="center" width="100%">
-<img src="./assets/fig1.png" alt="Stanford-Alpaca" style="width: 100%; min-width: 300px; display: block; margin: auto;">
-</p>
-
 ## Table of Contents
 
 - [twigvlm](#twigvlm)
@@ -22,11 +18,20 @@
   - [Citation](#citation)
 
 ## Highlights
+<p align="center" width="80%">
+<img src="./assets/fig1.png" alt="Stanford-Alpaca" style="width: 80%; min-width: 300px; display: block; margin: auto;">
+</p>
 
+1. Our TwigVLM achieves state-of-the-art performance among LLaVA-Based methods.By pruning 88.9% of visual tokens, it retains 96% of the original performance.
+   
+2. Our TwigVLM demonstrates a remarkable acceleration in generating long sentence responses, achieving a 154% improvement in speed compared to the native LLaVA model. 
+   
+3. Moreover, the training time is considerably more efficient, being only one-sixth of the original LLaVA model's finetune duration.
+4. By implementing the KVCache reuse mechanism, we have effectively eliminated computational redundancy, thereby enhancing overall efficiency.
 
 ## News
 - March 15, 2025: Training and evaluation codes of the `TwigVLM` model are released.
-- 
+  
 ## Demo
 
 ## Prerequisites
