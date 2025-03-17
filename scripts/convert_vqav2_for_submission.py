@@ -1,8 +1,9 @@
 import os
 import argparse
 import json
-
-from llava.eval.m4c_evaluator import EvalAIAnswerProcessor
+import sys
+sys.path.append('./')
+from twig_inference.eval.m4c_evaluator import EvalAIAnswerProcessor
 
 
 def parse_args():
