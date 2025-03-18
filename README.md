@@ -7,7 +7,6 @@ This repository contains the official training/evaluation code of the TwigVLM, w
 Compared with existing VLMacceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding(SSD) strategy.
 
 ## Table of Contents
-
   - [News](#news)
   - [Highlights](#highlights)
   - [Demo](#demo)
@@ -117,13 +116,13 @@ text_outputs = tokenizer.batch_decode(cont.predicted_tokens, skip_special_tokens
 
 Using our provided model, you can reproduce the following results. 
 
-| Models | GQA | MMBench | MME  | TextVQA | SQA(IMG) | VQAv2 |  POPE | MMMU  | MM-Vet | Avg |
-|:--------:|:----:|:----:|:--------:|:--------:|:-----:|:----:|:-------:|:-------:|:------:|:---:|
-| [SparseVLM]() | 52.7 | 56.2 | 1505 | 51.8 | 62.2 | 68.2 | 75.1 | 32.7 | 23.3 | 85.6% |
-| [MustDrop]() | 53.1 |	60 | 1612 | 54.2 | 63.4 | 69.3 | 68	| - | - | 88.1% |
-| [VisionZip]() | 55.1 | 60.1 |	1690 | 55.5	| 69 | 72.4 | 77 |	**36.2** | **31.7**	| 94.5% |
-| [VisionZip$\ddag$]() | 57	| **61.5** | 1756 |	**56** | 68.8 |	74.2 | 80.9 | 35.6 | 30.2 |	95.6% |
-| [**TwigVLM**]() | **58.8** | 60.4 | **1760** | 55.8 | **70** | **75.6** | **82.7** | 35.9 | 31.1 | **96.8%** |
+| Models | GQA | MME | MMBench | SQA(IMG) | TextVQA | VQAv2  | Avg |
+|:--------:|:----:|:----:|:--------:|:--------:|:-----:|:----:|:-------:|
+| [SparseVLM](https://github.com/Gumpest/SparseVLMs) | 57.6 | 1721 | 62.5 | 69.1 | 56.1 | 75.6 | 95.7% |
+| [MustDrop](https://github.com/liuting20/MustDrop) | 58.2	| 1787 | 62.3 |	69.2 | 56.5	| 76 | 96.6% |
+| [VisionZip](https://github.com/dvlab-research/VisionZip) | 59.3 | 1783 |63 | **68.9**	| 57.3 | 76.8	| 97.4% |
+| [VisionZip*](https://github.com/dvlab-research/VisionZip) | 60.1	| 1834 | 63.4 | 68.2 | 57.8 |	77.4 | 98.3% |
+| [**TwigVLM**](#) | **61.2** | **1848**| **64** | **68.9** | **58**  | **78.1** | **99.2%** |
 
 
 ## License

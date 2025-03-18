@@ -15,7 +15,7 @@ for IDX in $(seq 0 $((CHUNKS-1))); do
     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python twig_inference/eval/model_vqa_mmbench.py   \
         --model-path /mnt/pfs-mc0p4k/cv/team/zhenglihao/llm_common/$MODEL_NAME \
         --twig /mnt/pfs-mc0p4k/cv/team/wangmingyang/models/TwigVLM/$CKPT \
-        --retained_tokens 192 \
+        --retained_tokens 227 \
         --question-file ./playground/data/eval/mmbench/mmbench_dev_20230712.tsv \
         --answers-file ./playground/data/eval/mmbench/answers/$SPLIT/$CKPT/${CHUNKS}_${IDX}.jsonl \
         --num-chunks $CHUNKS \

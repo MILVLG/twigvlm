@@ -1,0 +1,14 @@
+torch==2.2.1
+transformers==4.38.1
+sentencepiece==0.2.0
+accelerate==0.27.2
+deepspeed==0.11.2
+shortuuid
+scikit-learn==1.2.2
+peft==0.11.1
+bitsandbytes==0.43.0
+pillow
+einops==0.6.1
+colorama==0.4.6
+numpy==1.26.1
+protobuf==4.23.4
