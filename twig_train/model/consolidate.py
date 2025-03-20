@@ -6,8 +6,8 @@ import argparse
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from llava.model import *
-from llava.model.utils import auto_upgrade
+from twig_train.model import *
+from twig_train.model.utils import auto_upgrade
 
 
 def consolidate_ckpt(src_path, dst_path):

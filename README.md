@@ -7,6 +7,8 @@ This repository contains the official training/evaluation code of the TwigVLM, w
 Compared with existing VLMacceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding(SSD) strategy.
 
 ## Table of Contents
+- [TwigVLM](#twigvlm)
+  - [Table of Contents](#table-of-contents)
   - [News](#news)
   - [Highlights](#highlights)
   - [Demo](#demo)
@@ -49,7 +51,7 @@ We recommend using [Anaconda](https://www.anaconda.com/) to create a new environ
 conda create -n twigvlm python=3.10 -y
 conda activate twigvlm
 pip install -r requirements.txt
-pip install flash-attn==2.4.2 --no-build-isolation
+pip install flash-attn==2.3.2 --no-build-isolation
 ``` 
 <!-- 3. Download the pretrained base models (i.e., Phi-2 and SigLIP) to your local directories. (optional)
 ``` shell
@@ -77,7 +79,12 @@ We follow the evaluation of [LLaVA-v1.5](https://github.com/haotian-liu/LLaVA/tr
 
 Before preparing task-specific data, you should download [eval.zip](https://drive.google.com/file/d/1atZSBBrAX54yYpxtVVW33zFvcnaHeFPy/view?usp=sharing) and unzip it to `./playground/data/eval`. For more specific instructions, please refer to [LLaVA's Evaluation.md](https://github.com/haotian-liu/LLaVA/blob/main/docs/Evaluation.md). 
 
-Before evaluation, simply add some configs as shown below:
+E.g. Example for evaluating GQA results (default 192 tokens):
+```
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 bash scripts/v1_5/eval/gqa.sh
+```
+
+If you want to eval some case, just simply add some configs as shown below:
 
 **Loading weights**
 
@@ -136,10 +143,5 @@ This project is maintained by the [MILVLG](https://github.com/MILVLG)@Hangzhou D
 If you use our model or refer our work in your studies, please cite:
 
 ```bibtex
-@article{imp2024,
-  title={Imp: Highly Capable Large Multimodal Models for Mobile Devices},
-  author={Shao, Zhenwei and Yu, Zhou and Yu, Jun and Ouyang, Xuecheng and Lihao, Zheng and Zhenbiao, Gai and Mingyang, Wang and Jiajun, Ding},
-  journal={arXiv preprint arXiv:2405.12107},
-  year={2024}
-}
+
 ```
