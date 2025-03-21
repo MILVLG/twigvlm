@@ -386,7 +386,6 @@ def forward(
 
     past_key_values = past_key_values.to_legacy_cache()
     hidden_states = model.model.norm(hidden_states)
-    # print(hidden_states.shape)
     logits = model.lm_head(hidden_states)
 
     return ForwardResult(

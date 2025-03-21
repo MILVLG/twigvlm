@@ -41,10 +41,9 @@ class AutoRegressiveGenerationStrategy(GenerationStrategy):
         prefill_length = inputs_embeds.shape[1]
         past_key_values = None
         output_ids: List[int] = []
-        prefill_time = 100000
-        decoding_time = 100000
-        if generation_config.record_time:
-            start_time = time.time()
+        prefill_time = 0
+        decoding_time = 0
+        start_time = time.time()
         exit_query_cache = None
 
         for idx in range(generation_config.max_steps):
@@ -68,8 +67,7 @@ class AutoRegressiveGenerationStrategy(GenerationStrategy):
                 streamer.put(next_token)
             next_token = next_token.item()
             if idx == 0:
-                if generation_config.record_time:
-                    prefill_time = time.time() - start_time
+                prefill_time = time.time() - start_time
             if next_token == eos_token_id:
                 break
 
@@ -77,8 +75,8 @@ class AutoRegressiveGenerationStrategy(GenerationStrategy):
             # Don't concatenate `next_token` to original `input_ids` since we're using
             # the KV cache (`past_key_values`) to speed up generation.
             input_ids = torch.tensor([[next_token]]).to(device)
-        if generation_config.record_time:
-            decoding_time = time.time() - start_time
+
+        decoding_time = time.time() - start_time
         return GenerationResult(
             predicted_tokens=[output_ids],
             num_tokens_generated=len(output_ids),

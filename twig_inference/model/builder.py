@@ -124,13 +124,10 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                     for k, v in checkpoints.items():
                         if k == "lm_head.weight":
                             twig_dict.update({"lm_head_early.weight":v})
-                            print("loading lm_head_early.weight")
                         elif k == "model.norm.weight":
                             twig_dict.update({"lm_head_early_norm.weight":v})
-                            print("loading lm_head_early_norm.weight")
                         elif k.startswith("model.layers."):
                             twig_dict.update({"extra_layers."+k[13:]:v})
-                            print("loading extra_layers."+k[13:])
                     print("twig loading successfully")
                     result = model.load_state_dict(twig_dict, strict=False)
     else:

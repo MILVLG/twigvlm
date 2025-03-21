@@ -225,6 +225,10 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
             draft_output_embeds = model.model.embed_tokens(draft_output_ids)
             prefill_inputs_embeds = torch.cat([inputs_embeds, draft_output_embeds], dim=1)
     
+        # if streamer:
+            # if isinstance(streamer, SpeculativeTextStreamer):
+                # print(colorama.Fore.LIGHTMAGENTA_EX, end="")
+                # streamer.put(draft_output_ids, is_draft=True)
         # verify model
         verify_results = forward_remainder(
             model,
@@ -286,6 +290,7 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
             if isinstance(streamer, SpeculativeTextStreamer):
                 # streamer.delete(len(draft_output_ids[0, :]))
                 print(colorama.Fore.GREEN, end="")
+                # print(number_of_matches)
                 streamer.put(draft_output_ids[0, : number_of_matches])
                 print(colorama.Style.RESET_ALL, end="")
                 streamer.put(verified_tokens[0][number_of_matches : number_of_matches + 1])
