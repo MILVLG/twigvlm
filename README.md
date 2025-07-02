@@ -2,9 +2,10 @@
 
 [[📖 Technical report]()\]&nbsp;&nbsp;&nbsp;&nbsp;[[🤗Huggingface]()\]
 
-This repository contains the official training/evaluation code of the TwigVLM, which is a simple and general architecture by “growing” a lightweight twig on top of an early layer of the base VLM.
+This repository contains the official training/evaluation code of the [TwigVLM paper](https://arxiv.org/abs/2503.14075), which is accepted by ICCV 2025.
+TwigVLM is a simple yet framework to accelerate inference of large visual language models (LVLMs) by “growing” a lightweight twig on top of an early layer of the base VLM.
 
-Compared with existing VLMacceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding(SSD) strategy.
+Compared with existing VLM acceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding(SSD) strategy.
 
 ## Table of Contents
 - [TwigVLM](#twigvlm)
@@ -21,19 +22,20 @@ Compared with existing VLMacceleration methods purely based on visual token prun
   - [Citation](#citation)
   
 ## News
-- March 15, 2025: Training and evaluation codes of the `TwigVLM` model are released.
+- July 5, 2025: Training and evaluation codes of the `TwigVLM` model are released.
 
 ## Highlights
 <p align="center" width="80%">
 <img src="./assets/fig1.png" alt="Stanford-Alpaca" style="width: 80%; min-width: 300px; display: block; margin: auto;">
 </p>
 
-1. Our TwigVLM achieves state-of-the-art performance among LLaVA-Based methods.By pruning 88.9% of visual tokens, it retains 96% of the original performance.
+1. Our TwigVLM, when applied on LLaVA-7B following other acceleration methods, achieves state-of-the-art performance w.r.t accuracy retention. By pruning 88.9% of visual tokens, it retains 96% of the original performance.
    
-2. Our TwigVLM demonstrates a remarkable acceleration in generating long sentence responses, achieving a 154% improvement in speed compared to the native LLaVA model. 
+2. Our TwigVLM demonstrates a remarkable acceleration in generating long responses, achieving a 154% improvement in speed compared to the native LLaVA model. 
    
-3. Moreover, the training time is considerably more efficient, being only one-sixth of the original LLaVA model's finetune duration.
-4. By implementing the KVCache reuse mechanism, we have effectively eliminated computational redundancy, thereby enhancing overall efficiency.
+3. The training of the twig block is considerably efficient, which takes only 1/10 duration of the original LLaVA model's finetuning stage.
+   
+5. Moreover, by implementing the KVCache reuse mechanism, we have effectively eliminated computational redundancy, thereby enhancing overall efficiency.
   
 ## Demo
 
@@ -142,12 +144,17 @@ Using our provided model, you can reproduce the following results.
 This project is licensed under the Apache License 2.0 - see the [LICENSE](https://www.apache.org/licenses/LICENSE-2.0) file for details.
 
 ## About us
-This project is maintained by the [MILVLG](https://github.com/MILVLG)@Hangzhou Dianzi University (HDU).  
+This project is maintained by the [MILVLG](https://github.com/MILVLG) @ Hangzhou Dianzi University (HDU).  
 
 ## Citation
 
 If you use our model or refer our work in your studies, please cite:
 
 ```bibtex
-
+@article{shao2025growing,
+  title={Growing a twig to accelerate large vision-language models},
+  author={Shao, Zhenwei and Wang, Mingyang and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Mao, Ning and Chen, Wei and Yu, Jun},
+  journal={arXiv preprint arXiv:2503.14075},
+  year={2025}
+}
 ```
