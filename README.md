@@ -2,8 +2,8 @@
 
 [[📖 Technical report]()\]&nbsp;&nbsp;&nbsp;&nbsp;[[🤗Huggingface]()\]
 
-This repository contains the official training/evaluation code of the [TwigVLM paper](https://arxiv.org/abs/2503.14075), which is accepted by ICCV 2025.
-TwigVLM is a simple yet framework to accelerate inference of large visual language models (LVLMs) by “growing” a lightweight twig on top of an early layer of the base VLM.
+This repository contains the official training/evaluation code of the [TwigVLM paper](https://arxiv.org/abs/2503.14075) (accepted by ICCV '25).
+TwigVLM is a simple yet framework to accelerate inference of large visual language models (LVLMs) by “growing” a lightweight twig block on top of an early layer of the base VLM.
 
 Compared with existing VLM acceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding(SSD) strategy.
 
