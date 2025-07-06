@@ -19,8 +19,8 @@ def load_image(image_file):
         image = Image.open(image_file).convert('RGB')
     return image
 
-model_path = "/mnt/pfs-mc0p4k/cv/team/zhenglihao/llm_common/llava-v1.5-7b/"
-twig = "/mnt/pfs-mc0p4k/cv/team/wangmingyang/models/TwigVLM/TwigVLM-2f-lr1e4-3L-0205/"
+model_path = "liuhaotian/llava-v1.5-7b"
+twig = "{path-dir}/TwigVLM-2f-lr1e4-3L-0205"
 device = "cuda"
 tokenizer, model, image_processor, context_len = load_pretrained_model(
     model_path=model_path,
@@ -49,7 +49,7 @@ image_sizes = [image.size]
 twigvlm_config = {
     "enable_FastV": True, 
     "attention_rank": 41, # retain visual tokens
-    "generation_strategy": "self_speculative" # self_speculative | autoregressive
+    "generation_strategy": "self_speculative", # self_speculative | autoregressive
 }
 
 if twigvlm_config["generation_strategy"] == 'self_speculative':
@@ -61,14 +61,14 @@ cont = model.generate(
     input_ids,
     images=image_tensor.unsqueeze(0).half().cuda(),
     do_sample=False,
-    temperature=0,
+    temperature=0.7,
     max_new_tokens=1024,
-    streamer=streamer, 
+    # streamer=streamer, 
     eos_token_id=tokenizer.eos_token_id, # required
     image_sizes=image_sizes,
     twigvlm_config=twigvlm_config
 )
-
+# print(cont)
 text_outputs = tokenizer.batch_decode(cont.predicted_tokens, skip_special_tokens=True)[0]
 print(f"Decoding speed: {cont.decoding_tokens_per_second} tokens/s")
-# print(text_outputs)
+print(text_outputs)

@@ -21,9 +21,8 @@ import torch.nn as nn
 from transformers import AutoConfig, AutoModelForCausalLM, LlamaForCausalLM, LlamaModel, LlamaConfig, AutoTokenizer
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
-from .self_speculation.llama_model_utils_twigvlm import LlamaModel, LlamaConfig, CustomLlamaDecoderLayer
+from .self_speculation.llama_model_utils_twigvlm import LlamaModel, LlamaConfig, LlamaDecoderLayer, LlamaRMSNorm
 import transformers
-from transformers.models.llama.modeling_llama import LlamaRMSNorm, LlamaDecoderLayer
 from ..llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
 import time
 import colorama
@@ -64,7 +63,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         self.lm_head_early = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.lm_head_early_norm = LlamaRMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps)
         self.extra_layers = nn.ModuleList(
-            [CustomLlamaDecoderLayer(config, layer_idx, 4) for layer_idx in range(2,5)]
+            [LlamaDecoderLayer(config, layer_idx, 4) for layer_idx in range(2,5)]
         )
         # Initialize weights and apply final processing
         self.post_init()
@@ -102,7 +101,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         top_k = kwargs.get('top_k', 50)
         top_p = kwargs.get('top_p', 0.95)
         image_tags = kwargs.pop("image_tags", None)
-        
+
         generation_config = GenerationConfig()
         generation_config.temperature = temperature
         generation_config.sample = do_sample

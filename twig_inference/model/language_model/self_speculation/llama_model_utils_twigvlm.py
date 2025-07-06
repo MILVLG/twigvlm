@@ -366,13 +366,24 @@ def forward(
             position_ids = position_ids.expand(batch_size, -1)[keep_indexs].view(batch_size, -1)
             image_tags = image_tags[keep_indexs].unsqueeze(0)
             keep_indexs_2 = (image_tags != 1)
+            new_seq_length = hidden_states.shape[1]
+            attention_mask_eager = attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
 
             # attention_mask = attention_mask[keep_indexs].view(batch_size, -1)
         elif layer_id == exit_vision_layer and is_first_forward and enable_FastV:
             hidden_size = hidden_states.shape[-1]
             hidden_states = hidden_states[keep_indexs_2,:].view(batch_size, -1, hidden_size)
             position_ids = position_ids.expand(batch_size, -1)[keep_indexs_2].view(batch_size, -1)
-
+            new_seq_length = hidden_states.shape[1]
+            attention_mask_eager = attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
+        
+        if not is_first_forward and enable_FastV:
+            if layer_id == exit_layer:
+                new_seq_length = hidden_states.shape[1] + past_key_values[layer_id][0].shape[2]
+                attention_mask_eager = attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
+            elif layer_id == exit_vision_layer:
+                new_seq_length = hidden_states.shape[1] + past_key_values[layer_id][0].shape[2]
+                attention_mask_eager = attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
         hidden_states, past_key_values = decoder_layer(
             hidden_states,
             attention_mask=attention_mask,
@@ -1035,91 +1046,94 @@ LLAMA_ATTENTION_CLASSES = {
     "flash_attention_2": LlamaFlashAttention2,
     "sdpa": LlamaSdpaAttention,
 }
-class CustomLlamaDecoderLayer(nn.Module):
+# class CustomLlamaDecoderLayer(nn.Module):
+#     def __init__(self, config: LlamaConfig, layer_idx: int, eager_layer_id: int):
+#         super().__init__()
+#         self.layer_idx = layer_idx
+#         self.hidden_size = config.hidden_size
+#         if eager_layer_id == layer_idx:
+#             self._attn_implementation = "eager"
+#             self.self_attn = LLAMA_ATTENTION_CLASSES["eager"](config=config, layer_idx=layer_idx)
+#         else:
+#             self._attn_implementation = "flash_attention_2"
+#             self.self_attn = LLAMA_ATTENTION_CLASSES["flash_attention_2"](config=config, layer_idx=layer_idx)
+#         # self.self_attn = LLAMA_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
+
+#         self.mlp = LlamaMLP(config)
+#         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+#         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+
+#     def forward(
+#         self,
+#         hidden_states: torch.Tensor,
+#         attention_mask: Optional[torch.Tensor] = None,
+#         attention_mask_eager: Optional[torch.Tensor] = None,
+#         position_ids: Optional[torch.LongTensor] = None,
+#         past_key_value: Optional[Tuple[torch.Tensor]] = None,
+#         output_attentions: Optional[bool] = False,
+#         use_cache: Optional[bool] = False,
+#         **kwargs,
+#     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+#         """
+#         Args:
+#             hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+#             attention_mask (`torch.FloatTensor`, *optional*):
+#                 attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
+#                 query_sequence_length, key_sequence_length)` if default attention is used.
+#             output_attentions (`bool`, *optional*):
+#                 Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+#                 returned tensors for more detail.
+#             use_cache (`bool`, *optional*):
+#                 If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+#                 (see `past_key_values`).
+#             past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
+#         """
+#         if "padding_mask" in kwargs:
+#             warnings.warn(
+#                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
+#             )
+#         residual = hidden_states
+#         hidden_states = self.input_layernorm(hidden_states)
+#         # Self Attention
+#         hidden_states, self_attn_weights, present_key_value = self.self_attn(
+#             hidden_states=hidden_states,
+#             attention_mask=attention_mask if self._attn_implementation != "eager" else attention_mask_eager,
+#             position_ids=position_ids,
+#             past_key_value=past_key_value,
+#             output_attentions=output_attentions,
+#             use_cache=use_cache,
+#             **kwargs,
+#         )
+#         hidden_states = residual + hidden_states
+#         # optimize
+#         # hidden_states = hidden_states[:,-1:,:]
+#         # Fully Connected
+
+#         residual = hidden_states
+#         hidden_states = self.post_attention_layernorm(hidden_states)
+#         hidden_states = self.mlp(hidden_states)
+#         hidden_states = residual + hidden_states
+#         outputs = (hidden_states,)
+
+#         if output_attentions:
+#             outputs += (self_attn_weights,)
+
+#         if use_cache:
+#             outputs += (present_key_value,)
+
+#         return outputs
+class LlamaDecoderLayer(nn.Module):
     def __init__(self, config: LlamaConfig, layer_idx: int, eager_layer_id: int):
         super().__init__()
         self.layer_idx = layer_idx
         self.hidden_size = config.hidden_size
+
         if eager_layer_id == layer_idx:
             self._attn_implementation = "eager"
             self.self_attn = LLAMA_ATTENTION_CLASSES["eager"](config=config, layer_idx=layer_idx)
         else:
-            self._attn_implementation = "flash_attention_2"
-            self.self_attn = LLAMA_ATTENTION_CLASSES["flash_attention_2"](config=config, layer_idx=layer_idx)
-        # self.self_attn = LLAMA_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
-
-        self.mlp = LlamaMLP(config)
-        self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        attention_mask_eager: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
-        **kwargs,
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-        """
-        Args:
-            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
-            attention_mask (`torch.FloatTensor`, *optional*):
-                attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
-                query_sequence_length, key_sequence_length)` if default attention is used.
-            output_attentions (`bool`, *optional*):
-                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
-                returned tensors for more detail.
-            use_cache (`bool`, *optional*):
-                If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
-                (see `past_key_values`).
-            past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
-        """
-        if "padding_mask" in kwargs:
-            warnings.warn(
-                "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
-            )
-        residual = hidden_states
-        hidden_states = self.input_layernorm(hidden_states)
-        # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask if self._attn_implementation != "eager" else attention_mask_eager,
-            position_ids=position_ids,
-            past_key_value=past_key_value,
-            output_attentions=output_attentions,
-            use_cache=use_cache,
-            **kwargs,
-        )
-        hidden_states = residual + hidden_states
-        # optimize
-        # hidden_states = hidden_states[:,-1:,:]
-        # Fully Connected
-
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
-        outputs = (hidden_states,)
-
-        if output_attentions:
-            outputs += (self_attn_weights,)
-
-        if use_cache:
-            outputs += (present_key_value,)
-
-        return outputs
-class LlamaDecoderLayer(nn.Module):
-    def __init__(self, config: LlamaConfig, layer_idx: int):
-        super().__init__()
-        self.layer_idx = layer_idx
-        self.hidden_size = config.hidden_size
-
-        self._attn_implementation = config._attn_implementation
-        self.self_attn = LLAMA_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
-
+            self._attn_implementation = config._attn_implementation
+            self.self_attn = LLAMA_ATTENTION_CLASSES[self._attn_implementation](config=config, layer_idx=layer_idx)
         self.mlp = LlamaMLP(config)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -1266,9 +1280,9 @@ class LlamaModel(LlamaPreTrainedModel):
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList(
-            [LlamaDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [LlamaDecoderLayer(config, layer_idx, -1) for layer_idx in range(config.num_hidden_layers)]
         )
-        print('config._attn_implementation', config._attn_implementation)
+
         self._use_sdpa = config._attn_implementation == "sdpa"
         self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -1479,12 +1493,20 @@ def forward_early(
     if model.model._use_flash_attention_2:
         # 2d mask is passed through the layers
         attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
+    elif model.model._use_sdpa:
+        # output_attentions=True can not be supported when using SDPA, and we fall back on
+        # the manual implementation that requires a 4D causal mask in all cases.
+        attention_mask = _prepare_4d_causal_attention_mask_for_sdpa(
+            attention_mask,
+            (batch_size, seq_length),
+            inputs_embeds,
+            past_key_values_length,
+        )
     else:
         # 4d mask is passed through the layers
         attention_mask = _prepare_4d_causal_attention_mask(
             attention_mask, (batch_size, seq_length), inputs_embeds, past_key_values_length
         )
-
     hidden_states = inputs_embeds
 
     for layer_id, decoder_layer in enumerate(model.model.layers[:exit_layer]):
@@ -1531,6 +1553,7 @@ def forward_early(
     if is_first_forward and enable_FastV:
         last_layer_attention_avg = torch.mean(last_layer_attention, dim=1) # shape: [batch_size, seq_length, seq_length]
         attn = last_layer_attention_avg[:,-1,:]
+        image_tags = image_tags.to(attn.device)
         image_weight = attn * (image_tags == 1) # shape: [batch_size, seq_length]
         top_attention_rank_index = image_weight.topk(attention_rank).indices # shape: [batch_size, ATTENTION_RANK]
 
@@ -1628,6 +1651,14 @@ def forward_remainder(
     if model.model._use_flash_attention_2:
         # 2d mask is passed through the layers
         early_attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
+    elif model.model._use_sdpa:
+        # the manual implementation that requires a 4D causal mask in all cases.
+        early_attention_mask = _prepare_4d_causal_attention_mask_for_sdpa(
+            attention_mask,
+            (batch_size, num_tokens_to_generate),
+            inputs_embeds,
+            draft_past_key_values_length,
+        )
     else:
         # 4d mask is passed through the layers
         early_attention_mask = _prepare_4d_causal_attention_mask(
@@ -1637,9 +1668,18 @@ def forward_remainder(
     full_attention_mask_eager = _prepare_4d_causal_attention_mask(
         attention_mask, (batch_size, seq_length), inputs_embeds, full_past_key_values_length + reduced_tokens
     )
+
     if model.model._use_flash_attention_2:
         # 2d mask is passed through the layers
         full_attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
+    elif model.model._use_sdpa:
+        # the manual implementation that requires a 4D causal mask in all cases.
+        full_attention_mask = _prepare_4d_causal_attention_mask_for_sdpa(
+            attention_mask,
+            (batch_size, seq_length),
+            inputs_embeds,
+            full_past_key_values_length + reduced_tokens,
+        )
     else:
         # 4d mask is passed through the layers
         full_attention_mask = _prepare_4d_causal_attention_mask(
@@ -1714,6 +1754,8 @@ def forward_remainder(
                         past_key_values = switch_cache(past_key_values, exit_layer, past_key_value_shared)
                     new_seq_length = full_hidden_states.shape[1] + past_key_values[idx][0].shape[2]
                     full_attention_mask_eager = full_attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
+                    if full_attention_mask is not None:
+                        full_attention_mask = full_attention_mask[:,:,-new_seq_length:, -new_seq_length:]
                 else: # delete cache
                     # shared = draft
                     cache_length = len(past_key_values) - exit_layer
@@ -1726,30 +1768,32 @@ def forward_remainder(
                 if is_first_forward is False:
                     new_seq_length = full_hidden_states.shape[1] + past_key_values[idx][0].shape[2]
                     full_attention_mask_eager = full_attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
+                    if full_attention_mask is not None:
+                        full_attention_mask = full_attention_mask[:,:,-new_seq_length:, -new_seq_length:]
             if enable_FastV and keep_indexs is not None and is_first_forward:
                 if idx == exit_layer:
                     hidden_size = full_hidden_states.shape[2]
                     with torch.no_grad():
-                        true_tensor = torch.ones(1, full_hidden_states.shape[1]-keep_indexs.shape[1], dtype=torch.bool, device=device)
-                        keep_indexs = torch.cat((keep_indexs, true_tensor), dim=1)
+                        true_tensor = torch.ones(1, full_hidden_states.shape[1]-keep_indexs.shape[1], dtype=torch.bool, device=full_hidden_states.device)
+                        keep_indexs = torch.cat((keep_indexs.to(full_hidden_states.device), true_tensor), dim=1)
                     # rank0_print(hidden_states.shape)
                     full_hidden_states = full_hidden_states[keep_indexs,:].view(batch_size, -1, hidden_size)
                     # rank0_print(hidden_states.shape)
-                    position_ids = position_ids.expand(batch_size, -1)[keep_indexs].view(batch_size, -1)
+                    position_ids = position_ids.expand(batch_size, -1)[keep_indexs.to(position_ids.device)].view(batch_size, -1)
                     new_seq_length = full_hidden_states.shape[1]
                     full_attention_mask_eager = full_attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
                 elif idx == exit_vision_layer:
                     hidden_size = full_hidden_states.shape[2]
                     with torch.no_grad():
-                        true_tensor = torch.ones(1, full_hidden_states.shape[1]-keep_indexs_2.shape[1], dtype=torch.bool, device=device)
-                        keep_indexs_2 = torch.cat((keep_indexs_2, true_tensor), dim=1)
+                        true_tensor = torch.ones(1, full_hidden_states.shape[1]-keep_indexs_2.shape[1], dtype=torch.bool, device=full_hidden_states.device)
+                        keep_indexs_2 = torch.cat((keep_indexs_2.to(full_hidden_states.device), true_tensor), dim=1)
                     # rank0_print(hidden_states.shape)
                     full_hidden_states = full_hidden_states[keep_indexs_2,:].view(batch_size, -1, hidden_size)
                     # rank0_print(hidden_states.shape)
-                    position_ids = position_ids.expand(batch_size, -1)[keep_indexs_2].view(batch_size, -1)
+                    position_ids = position_ids.expand(batch_size, -1)[keep_indexs_2.to(position_ids.device)].view(batch_size, -1)
                     new_seq_length = full_hidden_states.shape[1]
                     full_attention_mask_eager = full_attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
-
+                    
             hidden_states, past_key_values = decoder_layer(
                 full_hidden_states,
                 attention_mask=full_attention_mask,

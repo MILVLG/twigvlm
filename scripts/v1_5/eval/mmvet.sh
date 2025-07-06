@@ -13,8 +13,8 @@ CKPT="TwigVLM-2f-lr1e4-3L-0205"
 
 for IDX in $(seq 0 $((CHUNKS-1))); do
     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python -m twig_inference.eval.model_vqa \
-        --model-path /mnt/pfs-mc0p4k/cv/team/zhenglihao/llm_common/$MODEL_NAME \
-        --twig /mnt/pfs-mc0p4k/cv/team/wangmingyang/models/TwigVLM/$CKPT \
+        --model-path {path-dir}/$MODEL_NAME \
+        --twig {path-dir}/$CKPT \
         --retained_tokens 227 \
         --question-file ./playground/data/eval/mm-vet/llava-mm-vet.jsonl \
         --image-folder ./playground/data/eval/mm-vet/images \

@@ -257,13 +257,13 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
             prefill_length = logits_length - draft_output_ids.shape[1]
         # only select the logits relevant to what the draft has outputted.
             
-        verification_logits = logits[:, prompt_length - 1:, :].softmax(dim=-1)
+        verification_logits = logits[:, prompt_length - 1:, :]
 
         # There is a predicted token for every token in the draft output ids list, however note that the
         # first tokens (or first N tokens) are coming from the prompt
         verified_tokens, verified_probabilities = decode_next_token(logits=verification_logits, sample=sample, temperature=temperature, top_k=top_k, top_p=top_p)
         # skip verification of the last token as it is a new token predicted from the main model
-        verified_tokens = verified_tokens.to(prefill_token_ids)
+        verified_tokens = verified_tokens.to(device)
         # print(verified_tokens)
         verified = draft_output_ids[:, :] == verified_tokens[:, :-1]
         
