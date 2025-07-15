@@ -4,15 +4,15 @@ export HF_DATASETS_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 
 
-export TWIG_POS=2
-export N_TWIGS=3
+# export twig_K=2
+# export twig_T=3
 
 DATA_PATH="{dir}/llava_v1_5_mix665k.json"
 IMAGE_FOLDER="{dir}/dataset_images"
-MODEL_NAME_OR_PATH="liuhaotian/llava-v1.5-7b"  # "{dir}/llava-v1.5-7b"
+MODEL_NAME_OR_PATH="liuhaotian/llava-v1.5-7b"  # "{local_dir}/llava-v1.5-7b"
 
 start_time=$(date +%s)
-deepspeed twig_train/train/train.py \
+deepspeed twigvlm/train/train.py \
     --deepspeed ./scripts/zero2.json \
     --data_path $DATA_PATH \
     --image_folder $IMAGE_FOLDER \
@@ -26,7 +26,7 @@ deepspeed twig_train/train/train.py \
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/TwigVLM-llava1.5-7b-K${TWIG_POS}-T${N_TWIGS} \
+    --output_dir ./checkpoints/TwigVLM-llava1.5-7b-K${twig_K}-T${twig_T} \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 4 \

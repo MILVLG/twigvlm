@@ -7,16 +7,33 @@ IFS=',' read -ra GPULIST <<< "$gpu_list"
 
 CHUNKS=${#GPULIST[@]}
 
+r=0
+
+# 解析参数
+while getopts ":r:" opt; do
+  case $opt in
+    r)
+      r="$OPTARG"
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      ;;
+  esac
+done
+
 MODEL_NAME="llava-v1.5-7b"
-CKPT="TwigVLM-2f-lr1e4-3L-0205"
+CKPT="TwigVLM-llava-v1.5-7b-K2-T3"
 SPLIT="sqa"
 
 #/data/llm_common/vicuna-7b-v1.5 
 for IDX in $(seq 0 $((CHUNKS-1))); do
-    CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python -m twig_inference.eval.model_vqa_science \
+    CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python -m twigvlm.eval.model_vqa_science \
         --model-path {path-dir}/$MODEL_NAME \
         --twig {path-dir}/$CKPT \
-        --retained_tokens 227 \
+        --retained_tokens $r \
         --question-file ./playground/data/eval/scienceqa/llava_test_CQM-A.json \
         --image-folder ./playground/data/eval/scienceqa/images \
         --answers-file ./playground/data/eval/scienceqa/answers/$SPLIT/$CKPT/${CHUNKS}_${IDX}.jsonl \
