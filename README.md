@@ -8,7 +8,7 @@
 
 This repository contains the official code of the [TwigVLM paper](https://arxiv.org/abs/2503.14075) (accepted by ICCV '25). TwigVLM is a simple yet framework to accelerate inference of large visual language models (LVLMs) by “growing” a lightweight twig block on top of an early layer of the base VLM.
 
-Compared with existing VLM acceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding(SSD) strategy. More specifically, the LLaVA-1.5-7B model with our TwigVLM can retain 96% of the original performance when 88.9% of visual tokens are pruned, and achieves a 154% improvement in generation speed, which establishes a new state-of-the-art in term of both accuracy retention and generation speed in the field of VLM acceleration.
+Compared with existing VLM acceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding (SSD) strategy. More specifically, the LLaVA-1.5-7B model with our TwigVLM can retain 96% of the original performance when 88.9% of visual tokens are pruned, and achieves a 154% improvement in generation speed, which establishes a new state-of-the-art in term of both accuracy retention and generation speed in the field of VLM acceleration.
 
 ## Table of Contents
 
@@ -26,7 +26,7 @@ Compared with existing VLM acceleration methods purely based on visual token pru
 
 ## Prerequisites
 0. To train the models, you will need a server with **at least 4 GPUs**, each with **more than 40GB of memory** (e.g., 4×NVIDIA A6000). For inference or testing, **a single GPU with >40GB memory** is sufficient.
-1. Clone this repository and navigate to the folder 
+1. Clone this repository and navigate to the folder:
 ``` shell
 git clone git@github.com:ricar0/twigvlm.git
 cd twigvlm
@@ -53,7 +53,7 @@ checkpoints
 
 ## Training
 
-This section provides the instructions for training the twig block for LLaVA-1.5-7B model. Since the training process are inherited from the [LLaVA project](https://github.com/haotian-liu/LLaVA), please prepare the training data following [here](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#visual-instruction-tuning) and download the base model, [LLaVA-1.5-7b](https://huggingface.co/haotian-liu/LLaVA-1.5-7b), to your local directory. After that, you can run the following command to train the twig block.
+This section provides the instructions for training the twig block for LLaVA-1.5-7B model. Since the training process are inherited from the [LLaVA project](https://github.com/haotian-liu/LLaVA), please prepare the training data following [here](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#visual-instruction-tuning) and download the base model, [LLaVA-1.5-7b](https://huggingface.co/haotian-liu/LLaVA-1.5-7b), to your local directory. After that, you can run the following command to train the twig block:
 
 ``` shell
 # Training the twig block
