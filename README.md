@@ -2,8 +2,8 @@
 
 <!-- [[📖 Technical report]()\]&nbsp;&nbsp;&nbsp;&nbsp;[[🤗Huggingface]()\] -->
 
-<p align="center" width="80%">
-<img src="./assets/fig1.png" alt="Stanford-Alpaca" style="width: 80%; min-width: 300px; display: block; margin: auto;">
+<p align="center" width="100%">
+<img src="./assets/fig1.png" alt="TwigVLM" style="width: 100%; min-width: 300px; display: block; margin: auto;">
 </p>
 
 This repository contains the official code of the [TwigVLM paper](https://arxiv.org/abs/2503.14075) (accepted by ICCV '25). TwigVLM is a simple yet framework to accelerate inference of large visual language models (LVLMs) by “growing” a lightweight twig block on top of an early layer of the base VLM.
@@ -11,15 +11,14 @@ This repository contains the official code of the [TwigVLM paper](https://arxiv.
 Compared with existing VLM acceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding(SSD) strategy. More specifically, the LLaVA-1.5-7B model with our TwigVLM can retain 96% of the original performance when 88.9% of visual tokens are pruned, and achieves a 154% improvement in generation speed, which establishes a new state-of-the-art in term of both accuracy retention and generation speed in the field of VLM acceleration.
 
 ## Table of Contents
-- [TwigVLM](#twigvlm)
-  - [Table of Contents](#table-of-contents)
-  - [Prerequisites](#prerequisites)
-  - [Training](#training)
-  - [Evaluation](#evaluation)
-  - [Demo](#demo)
-  - [License](#license)
-  - [About us](#about-us)
-  - [Citation](#citation)
+
+- [Prerequisites](#prerequisites)
+- [Training](#training)
+- [Evaluation](#evaluation)
+- [Demo](#demo)
+- [License](#license)
+- [About us](#about-us)
+- [Citation](#citation)
   
 <!-- ## News
 - July 5, 2025: Training and evaluation codes of the `TwigVLM` model are released. -->
