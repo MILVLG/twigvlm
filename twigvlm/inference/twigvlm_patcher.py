@@ -2,8 +2,8 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-
-
+import math
+import os
 from transformers.generation.utils import GenerateOutput
 import transformers
 
@@ -64,7 +64,9 @@ def generate(
     generation_config.max_steps = max_new_tokens
     generation_config.generation_strategy = twigvlm_config["generation_strategy"]
     generation_config.enable_pruning = twigvlm_config["enable_pruning"]
-    generation_config.attention_rank = twigvlm_config["attention_rank"]
+    generation_config.exit_layer = int(os.environ.get('twig_K'))
+    attention_rank = twigvlm_config["attention_rank"]
+
     if "inputs_embeds" in kwargs:
         raise NotImplementedError("`inputs_embeds` is not supported")
     if images is not None:
@@ -87,6 +89,12 @@ def generate(
         )
     else:
         inputs_embeds = self.get_model().embed_tokens(inputs)
+
+    # compute the retained visual tokens
+    base_T = len(self.model.layers)
+    visual_token_num = (image_tags == 1).sum().item()
+    attention_rank = math.ceil((base_T*attention_rank-generation_config.exit_layer*visual_token_num)/(generation_config.finalwipe_layer-generation_config.exit_layer))
+    generation_config.attention_rank = attention_rank
 
     if generation_config.generation_strategy == "autoregressive":
         generation_strategy: GenerationStrategyResult = AutoRegressiveGenerationStrategy()

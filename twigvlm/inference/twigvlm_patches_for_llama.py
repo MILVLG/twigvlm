@@ -159,9 +159,9 @@ class LlamaModel(LlamaPreTrainedModel):
             [LlamaDecoderLayer(config, layer_idx, -1) for layer_idx in range(config.num_hidden_layers)]
         )
         K = int(os.environ.get('twig_K', '2'))
-        R = int(os.environ.get('twig_T', '3'))
+        T = int(os.environ.get('twig_T', '3'))
         self.twig_layers = nn.ModuleList(
-            [LlamaDecoderLayer(config, layer_idx, K+R-1) for layer_idx in range(K,K+R)]
+            [LlamaDecoderLayer(config, layer_idx, K+T-1) for layer_idx in range(K,K+T)]
         )
         self.twig_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.twig_norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)

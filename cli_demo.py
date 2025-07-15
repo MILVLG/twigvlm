@@ -71,7 +71,7 @@ input_ids = tokenizer_image_token(prompt_question, tokenizer, IMAGE_TOKEN_INDEX,
 image_sizes = [image.size]
 twigvlm_config = {
     "enable_pruning": True, 
-    "attention_rank": 41, # retain visual tokens
+    "attention_rank": 64, # avg retain visual tokens
     "generation_strategy": "self_speculative", # self_speculative | autoregressive
 }
 

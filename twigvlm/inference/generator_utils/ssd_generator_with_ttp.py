@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 import colorama
 import torch
 import time
+import math
 import transformers
 from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask, _prepare_4d_causal_attention_mask_for_sdpa
 from .generator_base import (
@@ -44,7 +45,7 @@ def forward_early(
     enable_pruning: bool,
     image_tags: torch.Tensor,
     forward_early_idx: int,
-    attention_rank: int
+    attention_rank: int,
 ) -> ForwardResult:
     device = None
     is_first_forward = False
@@ -585,7 +586,7 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
                 enable_pruning,
                 image_tags,
                 _,
-                attention_rank
+                attention_rank,
             )
             past_key_values = draft_result.past_key_values
             exit_query_cache = draft_result.exit_query_cache
