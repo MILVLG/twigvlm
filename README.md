@@ -31,7 +31,7 @@ Compared with existing VLM acceleration methods purely based on visual token pru
 git clone git@github.com:ricar0/twigvlm.git
 cd twigvlm
 ```
-1. Prepare the software environment. We recommend using [Anaconda](https://www.anaconda.com/) to create a new environment for the project, and install the requirements with the following commands:
+2. Prepare the software environment. We recommend using [Anaconda](https://www.anaconda.com/) to create a new environment for the project, and install the requirements with the following commands:
 ``` shell
 conda create -n twigvlm python=3.10 -y
 conda activate twigvlm
