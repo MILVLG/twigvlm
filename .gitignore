@@ -172,3 +172,4 @@ tmp/*
 scripts/test/*
 prompts.txt
 playground
+.DS_Store

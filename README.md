@@ -2,13 +2,13 @@
 
 <!-- [[📖 Technical report]()\]&nbsp;&nbsp;&nbsp;&nbsp;[[🤗Huggingface]()\] -->
 
+This repository contains the official code of the [TwigVLM paper](https://arxiv.org/abs/2503.14075) (accepted by ICCV '25). TwigVLM is a simple yet effective framework that accelerates inference in large visual language models (LVLMs) by “growing” a lightweight twig block on top of an early layer of the base VLM.
+
+Compared with existing VLM acceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding (SSD) strategy. More specifically, the LLaVA-1.5-7B model with our TwigVLM can retain 96% of the original performance when 88.9% of visual tokens are pruned, and achieves a 154% improvement in generation speed, which establishes a new state-of-the-art in term of both accuracy retention and generation speed in the field of VLM acceleration.
+
 <p align="center" width="100%">
 <img src="./assets/fig1.png" alt="TwigVLM" style="width: 100%; min-width: 300px; display: block; margin: auto;">
 </p>
-
-This repository contains the official code of the [TwigVLM paper](https://arxiv.org/abs/2503.14075) (accepted by ICCV '25). TwigVLM is a simple yet framework to accelerate inference of large visual language models (LVLMs) by “growing” a lightweight twig block on top of an early layer of the base VLM.
-
-Compared with existing VLM acceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding (SSD) strategy. More specifically, the LLaVA-1.5-7B model with our TwigVLM can retain 96% of the original performance when 88.9% of visual tokens are pruned, and achieves a 154% improvement in generation speed, which establishes a new state-of-the-art in term of both accuracy retention and generation speed in the field of VLM acceleration.
 
 ## Table of Contents
 
@@ -62,7 +62,7 @@ twig_K=2 twig_T=3 bash scripts/v1_5/train_twig.sh
 
 where `twig_K` and `twig_T` are the position of the twig block and the number of twig layers respectively (see the paper for details). 
 
-The trained checkpoints will be stored in `checkpoints/./checkpoints/TwigVLM-llava1.5-7b-K2-T3` in default. Our trained twig block checkpoint is available in [onedrive](https://awma1-my.sharepoint.com/:u:/g/personal/yuz_l0_tn/EeMoUa43kk5CrClb6qGsXgkBDfoZtK4EFO7nPnB8Ma6hQA?download=1).
+The trained checkpoints will be stored in `./checkpoints/TwigVLM-llava1.5-7b-K2-T3` in default. Our trained twig block checkpoint is available in [onedrive](https://awma1-my.sharepoint.com/:u:/g/personal/yuz_l0_tn/EeMoUa43kk5CrClb6qGsXgkBDfoZtK4EFO7nPnB8Ma6hQA?download=1).
 
 ## Evaluation
 
