@@ -28,7 +28,7 @@ Compared with existing VLM acceleration methods purely based on visual token pru
 0. To train the models, you will need a server with **at least 4 GPUs**, each with **more than 40GB of memory** (e.g., 4×NVIDIA A6000). For inference or testing, **a single GPU with >40GB memory** is sufficient.
 1. Clone this repository and navigate to the folder:
 ``` shell
-git clone git@github.com:ricar0/twigvlm.git
+git clone git@github.com:MILVLG/twigvlm.git
 cd twigvlm
 ```
 2. Prepare the software environment. We recommend using [Anaconda](https://www.anaconda.com/) to create a new environment for the project, and install the requirements with the following commands:
@@ -120,7 +120,7 @@ If you use our model or refer our work in your studies, please cite:
 @article{shao2025growing,
   title={Growing a twig to accelerate large vision-language models},
   author={Shao, Zhenwei and Wang, Mingyang and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Mao, Ning and Chen, Wei and Yu, Jun},
-  journal={arXiv preprint arXiv:2503.14075},
+  journal={IEEE International Conference on Computer Vision (ICCV)},
   year={2025}
 }
 ```
