@@ -38,6 +38,7 @@ conda activate twigvlm
 pip install -r requirements.txt
 pip install flash-attn==2.3.2 --no-build-isolation
 ``` 
+3. Please note that **SDPA** is currently unsupported. We recommend using **FlashAttention-2** as the preferred backend. If FlashAttention-2 cannot be installed, the **eager** implementation can be used as a fallback option.
 <!-- 3. Download the pretrained base models (i.e., Phi-2 and SigLIP) to your local directories. (optional)
 ``` shell
 python scripts/download_models.py
