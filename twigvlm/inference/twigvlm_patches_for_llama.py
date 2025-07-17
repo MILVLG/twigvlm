@@ -144,10 +144,6 @@ class LlamaDecoderLayer(nn.Module):
         return outputs
 
 class LlamaModel(LlamaPreTrainedModel):
-    """
-    注：本模块不需要forward逻辑，本该属于该模块的forward逻辑会全部写在
-    CausalLM类的覆写forward中
-    """
 
     def __init__(self, config: LlamaConfig):
         super().__init__(config)

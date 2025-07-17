@@ -48,13 +48,13 @@ deepspeed twigvlm/train/train.py \
     --report_to none
 
 
-# 记录结束时间
+# record time
 end_time=$(date +%s)
-# 计算总耗时（秒）
+
 total_time=$((end_time - start_time))
-# 转换为小时和分钟
+
 hours=$((total_time / 3600))
 minutes=$(((total_time % 3600) / 60))
-# 输出耗时
+
 echo "Total time: $hours hours $minutes mins"
 
