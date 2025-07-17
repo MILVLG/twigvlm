@@ -4,7 +4,7 @@ import os
 import json
 from tqdm import tqdm
 import shortuuid
-
+import time
 from twigvlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from twigvlm.conversation import conv_templates, SeparatorStyle
 from twigvlm.inference.builder import load_pretrained_model
@@ -44,6 +44,7 @@ def eval_model(args):
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         out_file = open(output_file, "w")
     
+    decoding_time, num_tokens_generated = 0, 0
     for line in tqdm(questions):
         idx = line["question_id"]
         image_file = line["image"]
@@ -68,6 +69,9 @@ def eval_model(args):
             "attention_rank": args.retained_tokens, # retain visual tokens
             "generation_strategy": "self_speculative" # self_speculative | autoregressive
         }
+
+        torch.cuda.synchronize()
+        start = time.time()
         output_ids = model.generate(
             input_ids,
             images=image_tensor.unsqueeze(0).half().cuda(),
@@ -82,9 +86,12 @@ def eval_model(args):
             use_cache=True,
             twigvlm_config=twigvlm_config
         )
-
+        torch.cuda.synchronize()
+        end = time.time()
         outputs = tokenizer.batch_decode(output_ids.predicted_tokens, skip_special_tokens=True)[0].strip()
-
+        
+        decoding_time += end-start
+        num_tokens_generated += output_ids.num_tokens_generated
         ans_id = shortuuid.uuid()
         ans_file.write(json.dumps({"question_id": idx,
                                    "prompt": cur_prompt,
@@ -94,7 +101,7 @@ def eval_model(args):
                                    "metadata": {}}) + "\n")
         ans_file.flush()
     ans_file.close()
-
+    print(f"avg generation speed: {num_tokens_generated/decoding_time} tokens/s")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", type=str, default="facebook/opt-350m")
@@ -111,7 +118,5 @@ if __name__ == "__main__":
     parser.add_argument("--top_p", type=float, default=0)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--output-file", type=str, default=None)
-    parser.add_argument("--record-data", type=int, default=0)
-    parser.add_argument("--warm-up", type=int, default=0)
     args = parser.parse_args()
     eval_model(args)

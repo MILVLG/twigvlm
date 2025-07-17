@@ -8,13 +8,13 @@ IFS=',' read -ra GPULIST <<< "$gpu_list"
 
 CHUNKS=${#GPULIST[@]}
 
-r=0
+R=0
 
 # 解析参数
-while getopts ":r:" opt; do
+while getopts ":R:" opt; do
   case $opt in
-    r)
-      r="$OPTARG"
+    R)
+      R="$OPTARG"
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -32,7 +32,7 @@ for IDX in $(seq 0 $((CHUNKS-1))); do
     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python -m twigvlm.eval.model_vqa \
         --model-path {path-dir}/$MODEL_NAME \
         --twig {path-dir}/$CKPT \
-        --retained_tokens $r \
+        --retained_tokens $R \
         --question-file ./playground/data/eval/mm-vet/llava-mm-vet.jsonl \
         --image-folder ./playground/data/eval/mm-vet/images \
         --answers-file ./playground/data/eval/mm-vet/answers/$CKPT/${CHUNKS}_${IDX}.jsonl \

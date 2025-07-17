@@ -69,9 +69,13 @@ The trained checkpoints will be stored in `./checkpoints/TwigVLM-llava1.5-7b-K2-
 
 This section provides the instructions for evaluating the TwigVLM and reproducing the results with LLaVA-1.5-7B reported in the paper. Before preparing task-specific data, you should download [eval.zip](https://drive.google.com/file/d/1atZSBBrAX54yYpxtVVW33zFvcnaHeFPy/view?usp=sharing) and unzip it to `./playground/data/eval`. For more specific instructions, please refer to [LLaVA's Evaluation.md](https://github.com/haotian-liu/LLaVA/blob/main/docs/Evaluation.md). 
 
-Example for evaluating GQA benchmark, where `-r` is the average number of retained visual tokens:
+Example for evaluating GQA benchmark, where `-R` is the average number of retained visual tokens:
 ```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7  twig_K=2 twig_T=3 bash scripts/v1_5/eval/gqa.sh  -r 192
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7  twig_K=2 twig_T=3 bash scripts/v1_5/eval/gqa.sh  -R 192
+```
+Example for evaluating generation speed:
+```
+CUDA_VISIBLE_DEVICES=0  twig_K=2 twig_T=3 bash scripts/v1_5/eval/mmvet.sh  -R 64
 ```
 
 Using our provided model, you can reproduce the following results. 
