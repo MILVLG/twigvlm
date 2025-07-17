@@ -1,10 +1,8 @@
 # TwigVLM
 
-<!-- [[📖 Technical report]()\]&nbsp;&nbsp;&nbsp;&nbsp;[[🤗Huggingface]()\] -->
+This repository contains the official code of our [paper](https://arxiv.org/abs/2503.14075) accepted at ICCV 2025. TwigVLM is a general and effective framework that accelerates large visual language models (LVLMs) by “growing” a lightweight twig block on top of an early layer of the base VLM.
 
-This repository contains the official code of the [TwigVLM paper](https://arxiv.org/abs/2503.14075) (accepted by ICCV '25). TwigVLM is a simple yet effective framework that accelerates inference in large visual language models (LVLMs) by “growing” a lightweight twig block on top of an early layer of the base VLM.
-
-Compared with existing VLM acceleration methods purely based on visual token pruning, our TwigVLM not only enjoys better accuracy retention by employing a twig guided token pruning (TTP) strategy, but also yields higher generation speed by utilizing a self-speculative decoding (SSD) strategy. More specifically, the LLaVA-1.5-7B model with our TwigVLM can retain 96% of the original performance when 88.9% of visual tokens are pruned, and achieves a 154% improvement in generation speed, which establishes a new state-of-the-art in term of both accuracy retention and generation speed in the field of VLM acceleration.
+Compared to existing VLM acceleration methods that are purely based on visual token pruning, our TwigVLM not only retains better accuracy by employing a twig-guided token pruning (TTP) strategy, but also achieves higher generation speed by utilizing a self-speculative decoding (SSD) strategy. More specifically, the LLaVA-1.5-7B model with our TwigVLM can retain 96% of the original performance when 88.9% of visual tokens are pruned, and achieves a 154% improvement in generation speed, which establishes a new state-of-the-art in terms of both accuracy retention and generation speed in the field of VLM acceleration.
 
 <p align="center" width="100%">
 <img src="./assets/fig1.png" alt="TwigVLM" style="width: 100%; min-width: 300px; display: block; margin: auto;">
@@ -54,20 +52,20 @@ checkpoints
 
 ## Training
 
-This section provides the instructions for training the twig block for LLaVA-1.5-7B model. Since the training process are inherited from the [LLaVA project](https://github.com/haotian-liu/LLaVA), please prepare the training data following [here](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#visual-instruction-tuning) and download the base model, [LLaVA-1.5-7b](https://huggingface.co/haotian-liu/LLaVA-1.5-7b), to your local directory. After that, you can run the following command to train the twig block:
+This section provides the instructions for training the TwigVLM for the LLaVA-1.5-7B model. Please refer to the original [LLaVA project](https://github.com/haotian-liu/LLaVA) to prepare the training data [here](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#visual-instruction-tuning) and the base model [LLaVA-1.5-7b](https://huggingface.co/haotian-liu/LLaVA-1.5-7b). After that, you can use the following script to train the TwigVLM:
 
 ``` shell
 # Training the twig block
 twig_K=2 twig_T=3 bash scripts/v1_5/train_twig.sh
 ```
 
-where `twig_K` and `twig_T` are the position of the twig block and the number of twig layers respectively (see the paper for details). 
+where `twig_K` and `twig_T` are the position of the twig block and the number of twig layers, respectively (see the paper for details). 
 
-The trained checkpoints will be stored in `./checkpoints/TwigVLM-llava1.5-7b-K2-T3` in default. Our trained twig block checkpoint is available in [onedrive](https://awma1-my.sharepoint.com/:u:/g/personal/yuz_l0_tn/EeMoUa43kk5CrClb6qGsXgkBDfoZtK4EFO7nPnB8Ma6hQA?download=1).
+The trained checkpoints will be stored in `./checkpoints/TwigVLM-llava1.5-7b-K2-T3` by default. The trained TwigVLM model (only the learned twig block) is available in [onedrive](https://awma1-my.sharepoint.com/:u:/g/personal/yuz_l0_tn/EeMoUa43kk5CrClb6qGsXgkBDfoZtK4EFO7nPnB8Ma6hQA?download=1).
 
 ## Evaluation
 
-This section provides the instructions for evaluating the TwigVLM and reproducing the results with LLaVA-1.5-7B reported in the paper. Before preparing task-specific data, you should download [eval.zip](https://drive.google.com/file/d/1atZSBBrAX54yYpxtVVW33zFvcnaHeFPy/view?usp=sharing) and unzip it to `./playground/data/eval`. For more specific instructions, please refer to [LLaVA's Evaluation.md](https://github.com/haotian-liu/LLaVA/blob/main/docs/Evaluation.md). 
+This section provides the instructions for evaluating the TwigVLM and reproducing the results with LLaVA-1.5-7B reported in the paper. Before preparing task-specific data, you should download [eval.zip](https://drive.google.com/file/d/1atZSBBrAX54yYpxtVVW33zFvcnaHeFPy/view?usp=sharing) and unzip it to `./playground/data/eval`. For more specific instructions, please take a look at [LLaVA's Evaluation.md](https://github.com/haotian-liu/LLaVA/blob/main/docs/Evaluation.md). 
 
 Example for evaluating GQA benchmark, where `-R` is the average number of retained visual tokens:
 ```
@@ -87,7 +85,7 @@ Example for evaluating generation speed:
 ```
 CUDA_VISIBLE_DEVICES=0  twig_K=2 twig_T=3 bash scripts/v1_5/eval/mmvet.sh  -R 64
 ```
-We conducted experiments on an `NVIDIA RTX 4090`, achieving a speed of approximately `60.6 tokens/s`. Note that different GPUs may exhibit fluctuations when handling parallel computations.
+Running on an `RTX 4090` GPU, the average generation speed is about 60.6 tokens/s. Note that different GPUs may exhibit fluctuations when handling parallel computations.
 
 
 ## Demo
@@ -104,7 +102,7 @@ python cli_demo.py \
     --image-file "./assets/image.png"
 ```
 
-The output will be like the following GIF. The tokens highlighted in green are generated by the draft model.
+The generated response will be like the following image. The tokens marked in green are generated by the draft model.
 
 <p align="center" width="100%">
 <img src="./assets/demo.gif" alt="Stanford-Alpaca" style="width: 100%; min-width: 300px; display: block; margin: auto;">
@@ -119,10 +117,10 @@ This project is maintained by the [MILVLG](https://github.com/MILVLG) @ Hangzhou
 
 ## Citation
 
-If you use our model or refer our work in your studies, please cite:
+If you use our model or refer to our work in your studies, please cite:
 
 ```bibtex
-@article{shao2025growing,
+@inproceedings{shao2025twigvlm,
   title={Growing a twig to accelerate large vision-language models},
   author={Shao, Zhenwei and Wang, Mingyang and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Mao, Ning and Chen, Wei and Yu, Jun},
   journal={IEEE International Conference on Computer Vision (ICCV)},
