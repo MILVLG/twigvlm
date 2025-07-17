@@ -74,7 +74,7 @@ Example for evaluating GQA benchmark, where `-R` is the average number of retain
 CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7  twig_K=2 twig_T=3 bash scripts/v1_5/eval/gqa.sh  -R 192
 ```
 
-Using our provided model, you can reproduce the following results. 
+Using our provided model, you can reproduce the following results in `R=192`. 
 | Models | GQA | MME | MMBench | SQA(IMG) | TextVQA | VQAv2  | RelAcc |
 |:--------:|:----:|:----:|:--------:|:--------:|:-----:|:----:|:-------:|
 | [SparseVLM](https://github.com/Gumpest/SparseVLMs) | 57.6 | 1721 | 62.5 | 69.1 | 56.1 | 75.6 | 95.7% |
@@ -87,7 +87,7 @@ Example for evaluating generation speed:
 ```
 CUDA_VISIBLE_DEVICES=0  twig_K=2 twig_T=3 bash scripts/v1_5/eval/mmvet.sh  -R 64
 ```
-
+We conducted experiments on an `NVIDIA RTX 4090`, achieving a speed of approximately `60.6 tokens/s`. Note that different GPUs may exhibit fluctuations when handling parallel computations.
 
 
 ## Demo
