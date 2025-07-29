@@ -92,7 +92,10 @@ def generate(
 
     # compute the retained visual tokens
     base_T = len(self.model.layers)
-    visual_token_num = (image_tags == 1).sum().item()
+    if image_tags is not None:
+        visual_token_num = (image_tags == 1).sum().item()
+    else:
+        visual_token_num = 0
     attention_rank = math.ceil((base_T*attention_rank-generation_config.exit_layer*visual_token_num)/(generation_config.finalwipe_layer-generation_config.exit_layer))
     generation_config.attention_rank = attention_rank
 

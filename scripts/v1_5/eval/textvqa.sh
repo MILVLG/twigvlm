@@ -58,6 +58,6 @@ done
 
 
 
-python -m twig_inference.eval.eval_textvqa \
+python -m twigvlm.eval.eval_textvqa \
     --annotation-file ./playground/data/eval/textvqa/TextVQA_0.5.1_val.json \
     --result-file $output_file
