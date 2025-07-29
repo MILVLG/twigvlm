@@ -55,7 +55,7 @@ for IDX in $(seq 0 $((CHUNKS-1))); do
     cat ./playground/data/eval/pope/answers/$SPLIT/$CKPT/${CHUNKS}_${IDX}.jsonl >> "$output_file"
 done
 
-python twig_inference/eval/eval_pope.py \
+python twigvlm/eval/eval_pope.py \
     --annotation-dir ./playground/data/eval/pope/coco \
     --question-file ./playground/data/eval/pope/llava_pope_test.jsonl \
     --result-file $output_file

@@ -57,7 +57,7 @@ for IDX in $(seq 0 $((CHUNKS-1))); do
 done
 
 
-python twig_inference/eval/eval_science_qa.py \
+python twigvlm/eval/eval_science_qa.py \
     --base-dir ./playground/data/eval/scienceqa \
     --result-file $output_file \
     --output-file ./playground/data/eval/scienceqa/answers/${MODEL_NAME}_output.jsonl \
