@@ -3,7 +3,7 @@ import argparse
 import json
 import re
 
-from twig_inference.eval.m4c_evaluator import TextVQAAccuracyEvaluator
+from twigvlm.eval.m4c_evaluator import TextVQAAccuracyEvaluator
 
 
 def get_args():
