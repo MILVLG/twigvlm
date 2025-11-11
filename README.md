@@ -76,10 +76,10 @@ Using our provided model, you can reproduce the following results in `R=192`.
 | Models | GQA | MME | MMBench | SQA(IMG) | TextVQA | VQAv2  | RelAcc |
 |:--------:|:----:|:----:|:--------:|:--------:|:-----:|:----:|:-------:|
 | [SparseVLM](https://github.com/Gumpest/SparseVLMs) | 57.6 | 1721 | 62.5 | 69.1 | 56.1 | 75.6 | 95.7% |
-| [MustDrop](https://github.com/liuting20/MustDrop) | 58.2	| 1787 | 62.3 |	69.2 | 56.5	| 76 | 96.6% |
-| [VisionZip](https://github.com/dvlab-research/VisionZip) | 59.3 | 1783 |63 | **68.9**	| 57.3 | 76.8	| 97.4% |
+| [MustDrop](https://github.com/liuting20/MustDrop) | 58.2	| 1787 | 62.3 |	**69.2** | 56.5	| 76 | 96.6% |
+| [VisionZip](https://github.com/dvlab-research/VisionZip) | 59.3 | 1783 |63 | 68.9	| 57.3 | 76.8	| 97.4% |
 | [VisionZip*](https://github.com/dvlab-research/VisionZip) | 60.1	| 1834 | 63.4 | 68.2 | 57.8 |	77.4 | 98.3% |
-| [**TwigVLM**](#) | **61.2** | **1848**| **64** | **68.9** | **58**  | **78.1** | **99.2%** |
+| [**TwigVLM**](#) | **61.2** | **1848**| **64** | 68.9 | **58**  | **78.1** | **99.2%** |
 
 Example for evaluating generation speed:
 ```
