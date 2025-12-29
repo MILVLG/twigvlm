@@ -120,10 +120,12 @@ This project is maintained by the [MILVLG](https://github.com/MILVLG) @ Hangzhou
 If this code is used in your research, please cite our paper:
 
 ```bibtex
-@inproceedings{shao2025twigvlm,
-  title={Growing a twig to accelerate large vision-language models},
-  author={Shao, Zhenwei and Wang, Mingyang and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Mao, Ning and Chen, Wei and Yu, Jun},
-  journal={IEEE International Conference on Computer Vision (ICCV)},
-  year={2025}
+@InProceedings{Shao_2025_ICCV,
+    author    = {Shao, Zhenwei and Wang, Mingyang and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Mao, Ning and Chen, Wei and Yu, Jun},
+    title     = {Growing a Twig to Accelerate Large Vision-Language Models},
+    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+    month     = {October},
+    year      = {2025},
+    pages     = {20064-20074}
 }
 ```
