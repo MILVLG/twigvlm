@@ -22,11 +22,10 @@ from .generator_base import (
 from .speculative_streamer import SpeculativeTextStreamer
 
 from .utils import (
-    decode_next_token,
     crop_past_key_values,
-    crop_past_key_value_cache,
     switch_cache,
-    delete_cache,
+    PHead_attention_module,
+    _prepare_decoder_attention_mask
 )
 
 def max_fn(x, eps=1e-6):
@@ -38,19 +37,19 @@ def forward_early(
     model: transformers.LlamaForCausalLM,
     input_ids: torch.Tensor,
     inputs_embeds: torch.Tensor,
-    past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
-    past_key_value_shared: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
-    exit_layer: int,
-    exit_query_cache: Optional[List[torch.Tensor]],
+    past_key_values_draft: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
+    wipe_layer: List[int],
     enable_pruning: bool,
     image_tags: torch.Tensor,
     forward_early_idx: int,
-    attention_rank: int,
+    attention_rank: List[int],
+    tree_mask: torch.Tensor,
+    top_k: int
 ) -> ForwardResult:
     device = None
     is_first_forward = False
     keep_indexs = None
-    keep_indexs_2 = None
+
     if input_ids is not None:
         device = input_ids.device
         batch_size, seq_length = input_ids.shape
@@ -61,24 +60,12 @@ def forward_early(
 
     seq_length_with_past = seq_length
     past_key_values_length = 0
-    
-    # switch cache
-    cache_length = len(past_key_value_shared)
 
-    if cache_length != 0 and forward_early_idx == 0:
-        past_key_value_verify = []
-        for layer_id in range(exit_layer, exit_layer+cache_length):
-            past_key_value_verify.append(past_key_values[layer_id])
-
-        past_key_values = switch_cache(past_key_values, exit_layer, past_key_value_shared)
-
-        past_key_value_shared = past_key_value_verify
-    
-    if past_key_values is not None:
-        past_key_values_length = past_key_values[0][0].shape[2]
+    if past_key_values_draft is not None:
+        past_key_values_length = past_key_values_draft[0][0].shape[2]
         seq_length_with_past = seq_length_with_past + past_key_values_length
         
-    past_key_values = transformers.cache_utils.DynamicCache.from_legacy_cache(past_key_values)
+    past_key_values_draft = transformers.cache_utils.DynamicCache.from_legacy_cache(past_key_values_draft)
 
     cache_position = torch.arange(
         past_key_values_length,
@@ -86,106 +73,88 @@ def forward_early(
         dtype=torch.long,
         device=device,
     )
+
+    if forward_early_idx > 0:
+        cache_position = (cache_position[0]-top_k*(forward_early_idx-1)+forward_early_idx-1).repeat(top_k)
+
     position_ids = cache_position.unsqueeze(0).view(-1, seq_length)
-    
+
     if input_ids is not None:
         inputs_embeds = model.model.embed_tokens(input_ids)
     
     attention_mask = torch.ones((batch_size, seq_length_with_past), dtype=torch.bool, device=device)
 
-    attention_mask_eager = _prepare_4d_causal_attention_mask(
-        attention_mask, (batch_size, seq_length), inputs_embeds, past_key_values_length
+    attention_mask_eager = _prepare_decoder_attention_mask(
+        attention_mask, (batch_size, seq_length), inputs_embeds, past_key_values_length, tree_mask
     )
-    if model.model._use_flash_attention_2:
-        # 2d mask is passed through the layers
-        attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
-    elif model.model._use_sdpa:
-        # output_attentions=True can not be supported when using SDPA, and we fall back on
-        # the manual implementation that requires a 4D causal mask in all cases.
-        attention_mask = _prepare_4d_causal_attention_mask_for_sdpa(
-            attention_mask,
-            (batch_size, seq_length),
-            inputs_embeds,
-            past_key_values_length,
-        )
-    else:
-        # 4d mask is passed through the layers
-        attention_mask = _prepare_4d_causal_attention_mask(
-            attention_mask, (batch_size, seq_length), inputs_embeds, past_key_values_length
-        )
+
+    attention_mask = attention_mask_eager
+
     hidden_states = inputs_embeds
-    for layer_id, decoder_layer in enumerate(model.model.layers[:exit_layer]):
-        hidden_states, past_key_values = decoder_layer(
+    for layer_id, decoder_layer in enumerate(model.model.layers[:wipe_layer[0]]):
+        hidden_states, past_key_values_draft = decoder_layer(
             hidden_states,
             attention_mask=attention_mask,
             attention_mask_eager=attention_mask_eager,
             position_ids=position_ids,
-            past_key_value=past_key_values,
+            past_key_value=past_key_values_draft,
             output_attentions=False,
             use_cache=True,
             cache_position=cache_position,
+            output_qk=False
             # padding_mask=None,
         )
 
-    exit_hidden_states = hidden_states
     # extra_layers
+    attention_score = None
+
     twig_T = len(model.model.twig_layers) 
     for layer_id, decoder_layer in enumerate(model.model.twig_layers):
         if layer_id == twig_T-1 and enable_pruning and is_first_forward:
             #############################################################
             #             Twig-guided Token Pruning (TTP)               #
             #############################################################
-            hidden_states, last_layer_attention, past_key_values = decoder_layer(
+            hidden_states, past_key_values_draft, qk = decoder_layer(
                 hidden_states,
                 attention_mask=attention_mask,
                 attention_mask_eager=attention_mask_eager,
                 position_ids=position_ids,
-                past_key_value=past_key_values,
-                output_attentions=True,
+                past_key_value=past_key_values_draft,
+                output_attentions=False,
                 use_cache=True,
                 cache_position=cache_position,
+                output_qk=True
                 # padding_mask=None,
             )
-            last_layer_attention_avg = torch.mean(last_layer_attention, dim=1) # shape: [batch_size, seq_length, seq_length]
-            attn = last_layer_attention_avg[:,-1,:]
-            image_tags = image_tags.to(attn.device)
-            image_weight = attn * (image_tags == 1) # shape: [batch_size, seq_length]
-            top_attention_rank_index = image_weight.topk(attention_rank).indices # shape: [batch_size, ATTENTION_RANK]
+            attention_score = PHead_attention_module(model, qk, image_tags)
+            top_attention_rank_index = attention_score.topk(attention_rank[0]).indices
 
             keep_indexs = (image_tags != 1)
             keep_indexs.scatter_(1, top_attention_rank_index, True)
-            image_tags = image_tags[keep_indexs].unsqueeze(0)
-            keep_indexs_2 = (image_tags != 1)
             #############################################################
             #             Twig-guided Token Pruning (TTP)               #
             #############################################################
         else:
-            hidden_states, past_key_values = decoder_layer(
+            hidden_states, past_key_values_draft = decoder_layer(
                 hidden_states,
                 attention_mask=attention_mask,
                 attention_mask_eager=attention_mask_eager,
                 position_ids=position_ids,
-                past_key_value=past_key_values,
+                past_key_value=past_key_values_draft,
                 output_attentions=False,
                 use_cache=True,
                 cache_position=cache_position,
+                output_qk=False
                 # padding_mask=None,
             )
 
-    # process attention
-    
-    past_key_values = past_key_values.to_legacy_cache()
-    
-    # next_cache = next_decoder_cache
-    if exit_query_cache is None:
-        exit_query_cache = exit_hidden_states
-    else:
-        exit_query_cache = torch.cat([exit_query_cache, exit_hidden_states], dim=1)
+    past_key_values_draft = past_key_values_draft.to_legacy_cache()
 
     hidden_states = model.model.twig_norm(hidden_states)
     logits = model.model.twig_head(hidden_states)
+
     return ForwardResult(
-        logits=logits, past_key_values=past_key_values, past_key_value_shared=past_key_value_shared, exit_query_cache=exit_query_cache,keep_indexs=keep_indexs,keep_indexs_2=keep_indexs_2
+        logits=logits, past_key_values=past_key_values_draft, keep_indexs=keep_indexs
     )
 
 
@@ -194,242 +163,112 @@ def forward_remainder(
     model: transformers.LlamaForCausalLM,
     input_ids: torch.Tensor,
     inputs_embeds: torch.Tensor,
-    past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
-    past_key_value_shared: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
-    exit_layer: int,
-    finalwipe_layer: int,
-    exit_query_cache: Optional[List[torch.Tensor]],
+    draft_tokens: torch.Tensor,
+    past_key_values_target: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
+    wipe_layer: List[int],
     enable_pruning: Optional[bool],
     keep_indexs: torch.Tensor,
-    keep_indexs_2: torch.Tensor,
     reduced_tokens: int,
+    tree_position_ids: torch.Tensor,
+    tree_mask: torch.Tensor,
+    image_tags: torch.Tensor,
 ) -> ForwardResult:
     device = None
     if input_ids is not None:
         device = input_ids.device
+        input_ids = input_ids[:,-1:]
         batch_size, seq_length = input_ids.shape
     else:
         device = inputs_embeds.device
         batch_size, seq_length, _ = inputs_embeds.shape 
-    num_tokens_to_generate: int = 1
-    seq_length_with_past = seq_length
-    draft_past_key_values_length: int = 0
-    full_past_key_values_length: int = 0
 
+    full_seq_length = seq_length + draft_tokens.shape[1]
+    full_past_key_values_length = 0
     is_first_forward = False
-    if len(past_key_values) != len(model.model.layers):
+
+    if past_key_values_target is None:
         is_first_forward = True
-    if past_key_values is not None and past_key_values[0] is not None:
-        
-        # it's okay to use the first layer because the draft model necessairly computes it
-        draft_past_key_values_length = past_key_values[0][0].shape[2]
-        # the total sequence length is the past key values since that includes the draft tokens
+    else:
+        full_past_key_values_length = past_key_values_target[-1][0].shape[2] + reduced_tokens
 
-        # the last layer should not have been skipped, we can get this to check how many of the tokens have gone through full
-        # verification
-        if len(past_key_values) == len(model.model.layers):
-            full_past_key_values_length = past_key_values[-1][0].shape[2]
-        else:
-            # we have not done a full pass yet so the history is 0
-            full_past_key_values_length = 0
-
-        seq_length_with_past = num_tokens_to_generate + draft_past_key_values_length
-
-    past_key_values = transformers.cache_utils.DynamicCache.from_legacy_cache(past_key_values)
+    past_key_values_target = transformers.cache_utils.DynamicCache.from_legacy_cache(past_key_values_target)
+    
     if input_ids is not None:
+        input_ids = torch.cat([input_ids, draft_tokens], dim=-1)
         inputs_embeds = model.model.embed_tokens(input_ids)
-
+    else:
+        draft_tokens_embeds = model.model.embed_tokens(draft_tokens)
+        inputs_embeds = torch.cat([inputs_embeds, draft_tokens_embeds], dim=1)
 
     cache_position = torch.arange(
-        full_past_key_values_length + reduced_tokens,
-        seq_length_with_past,
+        full_past_key_values_length,
+        full_past_key_values_length+seq_length,
         dtype=torch.long,
         device=device,
     )  
+    cache_position = torch.cat([cache_position, tree_position_ids+full_past_key_values_length+seq_length], dim=0)
 
-    position_ids = cache_position.unsqueeze(0).view(-1, seq_length)
+    position_ids = cache_position.unsqueeze(0).view(-1, full_seq_length)
 
     attention_mask = torch.ones(
-        (batch_size, seq_length_with_past),
+        (batch_size, full_past_key_values_length+full_seq_length),
         dtype=torch.bool,
         device=device
     )
-
-    early_attention_mask_eager = _prepare_4d_causal_attention_mask(
-        attention_mask, (batch_size, num_tokens_to_generate), inputs_embeds, draft_past_key_values_length
-    )
-    if model.model._use_flash_attention_2:
-        # 2d mask is passed through the layers
-        early_attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
-    elif model.model._use_sdpa:
-        # the manual implementation that requires a 4D causal mask in all cases.
-        early_attention_mask = _prepare_4d_causal_attention_mask_for_sdpa(
-            attention_mask,
-            (batch_size, num_tokens_to_generate),
-            inputs_embeds,
-            draft_past_key_values_length,
-        )
-    else:
-        # 4d mask is passed through the layers
-        early_attention_mask = _prepare_4d_causal_attention_mask(
-            attention_mask, (batch_size, num_tokens_to_generate), inputs_embeds, draft_past_key_values_length
-        )
-
-    full_attention_mask_eager = _prepare_4d_causal_attention_mask(
-        attention_mask, (batch_size, seq_length), inputs_embeds, full_past_key_values_length + reduced_tokens
+    
+    attention_mask_eager = _prepare_decoder_attention_mask(
+        attention_mask, (batch_size, full_seq_length), inputs_embeds, full_past_key_values_length, tree_mask
     )
 
-    if model.model._use_flash_attention_2:
-        # 2d mask is passed through the layers
-        full_attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
-    elif model.model._use_sdpa:
-        # the manual implementation that requires a 4D causal mask in all cases.
-        full_attention_mask = _prepare_4d_causal_attention_mask_for_sdpa(
-            attention_mask,
-            (batch_size, seq_length),
-            inputs_embeds,
-            full_past_key_values_length + reduced_tokens,
-        )
-    else:
-        # 4d mask is passed through the layers
-        full_attention_mask = _prepare_4d_causal_attention_mask(
-            attention_mask, (batch_size, seq_length), inputs_embeds, full_past_key_values_length + reduced_tokens
-        )
+    attention_mask = attention_mask_eager
 
-    next_decoder_cache = []
     hidden_states = inputs_embeds
-
     # TODO simplify
 
-    full_hidden_states: Optional[torch.FloatTensor] = None
     for idx, decoder_layer in enumerate(model.model.layers):
-        is_early_exit = idx < exit_layer
-        past_key_value = (
-            past_key_values[idx]
-            if (past_key_values is not None and idx < len(past_key_values))
-            else None
-        )
-        if is_early_exit:
-            # early hidden states: B x num_gen x C
-            early_hidden_states = hidden_states[:, -num_tokens_to_generate:]
-            early_position_ids = position_ids[:, -num_tokens_to_generate:]
-            early_cache_position = cache_position[-num_tokens_to_generate:]
-            hidden_states, past_key_values = decoder_layer(
-                early_hidden_states,
-                attention_mask=early_attention_mask,
-                attention_mask_eager=early_attention_mask_eager,
-                position_ids=early_position_ids,
-                past_key_value=past_key_values,
-                output_attentions=False,
-                use_cache=True,
-                cache_position=early_cache_position,
-                # padding_mask=None,
-            )
-            # skip it when draft tokens is none
-            # update draft model's past_key_values
+        if enable_pruning:
+            if is_first_forward:
+                if idx in wipe_layer:
+                    hidden_size = hidden_states.shape[2]
+                    if wipe_layer.index(idx) != 0:
+                        image_tags = image_tags[keep_indexs].unsqueeze(0)
+                        keep_indexs = (image_tags != 1)
 
-            if idx == exit_layer - 1 and (input_ids is None or input_ids.shape[1] != 1):
-                for layer_id, decoder_layer in enumerate(model.model.twig_layers):
-                    early_position_ids = position_ids[:, -num_tokens_to_generate:]
-                    early_cache_position = cache_position[-num_tokens_to_generate:]
-                    if layer_id == 0:
-                        early_hidden_states = hidden_states[:, -num_tokens_to_generate:]
-                    else:
-                        early_hidden_states = _[:, -num_tokens_to_generate:]
-                    _, past_key_values = decoder_layer(
-                        early_hidden_states,
-                        attention_mask=early_attention_mask,
-                        attention_mask_eager=early_attention_mask_eager,
-                        position_ids=early_position_ids,
-                        past_key_value=past_key_values,
-                        output_attentions=False,
-                        use_cache=True,
-                        cache_position=early_cache_position,
-                        # padding_mask=None,
-                    )
-        else:   
-            if full_hidden_states is None and exit_query_cache is not None:
-                # first time seeing the full hidden states, we need to rely on the
-                # query cache
-                # only use if exit query cache exists, if not this is our first call
-                full_hidden_states = torch.cat(
-                    [exit_query_cache, hidden_states[:, -num_tokens_to_generate:]],
-                    dim=1,
-                )
-            else:
-                # we already have seen the fully hidden states we can re-use them now
-                full_hidden_states = hidden_states
-            
-            # switch cache or delete cache
-            if idx == exit_layer:
-                past_key_value_draft = []
-                if is_first_forward == False: # shared = verify
-                    if full_hidden_states.shape[1] != 1:
-                        cache_length = len(past_key_value_shared)
-                        for layer_id in range(exit_layer, exit_layer+cache_length):
-                            past_key_value_draft.append(past_key_values[layer_id])
-                        past_key_values = switch_cache(past_key_values, exit_layer, past_key_value_shared)
-                    new_seq_length = full_hidden_states.shape[1] + past_key_values[idx][0].shape[2]
-                    full_attention_mask_eager = full_attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
-                    if full_attention_mask is not None:
-                        full_attention_mask = full_attention_mask[:,:,-new_seq_length:, -new_seq_length:]
-                else: # delete cache
-                    # shared = draft
-                    cache_length = len(past_key_values) - exit_layer
-                    for layer_id in range(exit_layer, exit_layer+cache_length):
-                        past_key_value_draft.append(past_key_values[layer_id])
-                    past_key_values = delete_cache(past_key_values, exit_layer)
+                    true_tensor = torch.ones(1, hidden_states.shape[1]-keep_indexs.shape[1], dtype=torch.bool, device=hidden_states.device)
+                    image_tag_padding = torch.zeros(1, hidden_states.shape[1]-image_tags.shape[1], dtype=torch.int, device=hidden_states.device)
+                    keep_indexs = torch.cat((keep_indexs.to(hidden_states.device), true_tensor), dim=1)
+                    image_tags = torch.cat((image_tags.to(hidden_states.device), image_tag_padding), dim=1)
 
-                past_key_values = transformers.cache_utils.DynamicCache.from_legacy_cache(past_key_values)
-            if idx == finalwipe_layer:
-                if is_first_forward is False:
-                    new_seq_length = full_hidden_states.shape[1] + past_key_values[idx][0].shape[2]
-                    full_attention_mask_eager = full_attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
-                    if full_attention_mask is not None:
-                        full_attention_mask = full_attention_mask[:,:,-new_seq_length:, -new_seq_length:]
-            if enable_pruning and keep_indexs is not None and is_first_forward:
-                if idx == exit_layer:
-                    hidden_size = full_hidden_states.shape[2]
-                    with torch.no_grad():
-                        true_tensor = torch.ones(1, full_hidden_states.shape[1]-keep_indexs.shape[1], dtype=torch.bool, device=full_hidden_states.device)
-                        keep_indexs = torch.cat((keep_indexs.to(full_hidden_states.device), true_tensor), dim=1)
-                    full_hidden_states = full_hidden_states[keep_indexs,:].view(batch_size, -1, hidden_size)
+                    hidden_states = hidden_states[keep_indexs,:].view(batch_size, -1, hidden_size)
                     position_ids = position_ids.expand(batch_size, -1)[keep_indexs.to(position_ids.device)].view(batch_size, -1)
                     cache_position = cache_position[keep_indexs[0,:].to(cache_position.device)]
-                    new_seq_length = full_hidden_states.shape[1]
-                    full_attention_mask_eager = full_attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
-                elif idx == finalwipe_layer:
-                    hidden_size = full_hidden_states.shape[2]
-                    with torch.no_grad():
-                        true_tensor = torch.ones(1, full_hidden_states.shape[1]-keep_indexs_2.shape[1], dtype=torch.bool, device=full_hidden_states.device)
-                        keep_indexs_2 = torch.cat((keep_indexs_2.to(full_hidden_states.device), true_tensor), dim=1)
-                    full_hidden_states = full_hidden_states[keep_indexs_2,:].view(batch_size, -1, hidden_size)
-                    position_ids = position_ids.expand(batch_size, -1)[keep_indexs_2.to(position_ids.device)].view(batch_size, -1)
-                    cache_position = cache_position[keep_indexs_2[0,:].to(cache_position.device)]
-                    new_seq_length = full_hidden_states.shape[1]
-                    full_attention_mask_eager = full_attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
-                    
-            hidden_states, past_key_values = decoder_layer(
-                full_hidden_states,
-                attention_mask=full_attention_mask,
-                attention_mask_eager=full_attention_mask_eager,
+                    new_seq_length = hidden_states.shape[1]
+                    attention_mask_eager = attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
+                    attention_mask = attention_mask[:,:,-new_seq_length:, -new_seq_length:]
+            else:
+                if idx in wipe_layer:
+                    new_seq_length = hidden_states.shape[1] + past_key_values_target[idx][0].shape[2]
+                    attention_mask_eager = attention_mask_eager[:,:,-new_seq_length:, -new_seq_length:]
+                    if attention_mask is not None:
+                        attention_mask = attention_mask[:,:,-new_seq_length:, -new_seq_length:]
+    
+            hidden_states, past_key_values_target = decoder_layer(
+                hidden_states,
+                attention_mask=attention_mask,
+                attention_mask_eager=attention_mask_eager,
                 position_ids=position_ids,
-                past_key_value=past_key_values,
+                past_key_value=past_key_values_target,
                 output_attentions=False,
                 use_cache=True,
                 cache_position=cache_position,
-                # padding_mask=None,
             )
 
-    past_key_values = past_key_values.to_legacy_cache()
-
-    # shared = draft
-    past_key_value_shared = past_key_value_draft
+    past_key_values_target = past_key_values_target.to_legacy_cache()
 
     hidden_states = model.model.norm(hidden_states)
     logits = model.lm_head(hidden_states)
     return ForwardResult(
-        logits=logits, past_key_value_shared=past_key_value_shared, past_key_values=past_key_values, exit_query_cache=exit_query_cache
+        logits=logits, past_key_values=past_key_values_target
     )
 
 
@@ -455,9 +294,10 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
             total_generations = 0
             reduced_tokens = 0
             output_ids: List[int] = []
-            past_key_values = None
-            past_key_value_shared = []
+            past_key_values_draft = None
+            past_key_values_target = None
             prefill_length=inputs_embeds.shape[1]
+            torch.cuda.synchronize()
             decoding_start = time.time()
             while len(output_ids) < generation_config.max_steps:
                 if input_ids is not None:
@@ -465,8 +305,8 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
                 (
                     input_ids,
                     output_ids,
-                    past_key_values,
-                    past_key_value_shared,
+                    past_key_values_draft,
+                    past_key_values_target,
                     number_of_matches,
                     num_speculations,
                     prefill_length,
@@ -477,14 +317,10 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
                     inputs_embeds=inputs_embeds,
                     input_ids=input_ids,
                     output_ids=output_ids,
-                    num_speculations=min(
-                        generation_config.num_speculations,
-                        generation_config.max_steps - len(output_ids) - 1,
-                    ),
-                    past_key_values=past_key_values,
-                    past_key_value_shared=past_key_value_shared,
-                    exit_layer=generation_config.exit_layer,
-                    finalwipe_layer=generation_config.finalwipe_layer,
+                    num_speculations=generation_config.num_speculations,
+                    past_key_values_draft=past_key_values_draft,
+                    past_key_values_target=past_key_values_target,
+                    wipe_layer=generation_config.wipe_layer,
                     eos_token_id=eos_token_id,
                     calls=calls,
                     sample=generation_config.sample,
@@ -512,6 +348,7 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
                     eos_found = True
                 if eos_found:
                     break
+        torch.cuda.synchronize()
         decoding_time = time.time() - decoding_start
         acceptance_rate = total_draft_matches / total_generations
         num_tokens_generated=len(output_ids)
@@ -536,12 +373,11 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
         input_ids: torch.Tensor,
         output_ids: List[int],
         num_speculations: int,
-        past_key_values: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
-        past_key_value_shared: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
+        past_key_values_draft: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
+        past_key_values_target: Optional[List[Tuple[torch.Tensor, torch.Tensor]]],
         eos_token_id: int,
         calls: int,
-        exit_layer: int,
-        finalwipe_layer: int,
+        wipe_layer: List[int],
         reduced_tokens: int = 0,
         sample: Optional[bool] = False,
         temperature: Optional[float] = 0,
@@ -567,174 +403,243 @@ class SelfSpeculativeGenerationStrategy(GenerationStrategy):
             prompt_length: int = inputs_embeds.size(1)
         # draft model output token
         draft_output_ids: List[int] = []
-        # store the hidden_states
-        exit_query_cache = None
         # prepare for attention maps
         keep_indexs = None
-        keep_indexs_2 = None
         # forward the draft token
 
+        top_k = 10
+        total_tokens = 60
+        scores_list, parents_list, ss_token= [], [], []
+        tree_mask_init = torch.eye(top_k, device=device)[None, None]
+        padding = (torch.zeros(1, 1, dtype=torch.long) - 1).to(device)
+        parents_list.append(torch.zeros(1, dtype=torch.long, device=device))
+        sample_token = torch.tensor([-1], dtype=torch.long, device=device)
+        tree_mask = None
         for _ in range(num_speculations):
             draft_result = forward_early(
                 model,
                 draft_input_ids,
                 inputs_embeds,
-                past_key_values,
-                past_key_value_shared,
-                exit_layer,
-                exit_query_cache,
+                past_key_values_draft,
+                wipe_layer,
                 enable_pruning,
                 image_tags,
                 _,
                 attention_rank,
+                tree_mask,
+                top_k,
             )
-            past_key_values = draft_result.past_key_values
-            exit_query_cache = draft_result.exit_query_cache
-            past_key_value_shared = draft_result.past_key_value_shared
+            past_key_values_draft = draft_result.past_key_values
             draft_logits = draft_result.logits
             # store the keep_indexs for fastv and only through once
             if enable_pruning and draft_result.keep_indexs is not None:
                 keep_indexs = draft_result.keep_indexs
-                keep_indexs_2 = draft_result.keep_indexs_2
             if logits_processors:
                 draft_logits = logits_processors(draft_input_ids, draft_logits)
 
-            draft_next_token, draft_next_prob = decode_next_token(logits=draft_logits, token_idx=-1, sample=sample, temperature=temperature, top_k=top_k, top_p=top_p)
+            ## tree draft
+            if _ == 0:
+                last_p = draft_logits[:,-1,:].log_softmax(dim=-1)
+                top = torch.topk(last_p, top_k, dim=-1)
+                topk_index, topk_p = top.indices, top.values
+                scores = topk_p[0]
+                scores_list.append(scores[None])
+                tree_mask = tree_mask_init
+                topk_cs_index = torch.arange(top_k, device=device)
+            else:
+                last_p = draft_logits[0].log_softmax(dim=-1)
+                top = torch.topk(last_p, top_k, dim=-1)
+                topk_index, topk_p = top.indices, top.values
+                cu_scores = topk_p + scores[:, None]
+                scores_list.append(cu_scores)
             
-            draft_next_token = draft_next_token.item()
-            draft_output_ids.append(draft_next_token)
-            if sample:
-                draft_probabilities.append(draft_next_prob)
-            draft_input_ids = torch.tensor([[draft_next_token]]).to(device)
-            if draft_next_token == eos_token_id:
-                # break out of loop when we get an EOS token
-                break
-            if draft_logits[:,-1,:].softmax(dim=-1)[:,draft_next_token] < 0.6:
-                break
+                topk_cs = torch.topk(cu_scores.view(-1), top_k, dim=-1)
+                topk_cs_index, topk_cs_p = topk_cs.indices, topk_cs.values 
 
-        draft_output_ids = torch.tensor(draft_output_ids).unsqueeze(0).to(device)
-        prefill_inputs_embeds=None
-        prefill_token_ids=None
+                scores = topk_cs_p
+                out_ids = topk_cs_index // top_k
+                tree_mask = torch.cat((tree_mask[:, :, out_ids], tree_mask_init), dim=3)
 
-        if input_ids is not None:
-            # the next few times
-            prefill_token_ids = torch.cat(
-                [input_ids, draft_output_ids],
-                dim=-1,
-            ).int()
-        else:
-            # the first forward
-            draft_output_embeds = model.model.embed_tokens(draft_output_ids)
-            prefill_inputs_embeds = torch.cat([inputs_embeds, draft_output_embeds], dim=1)
-    
+            draft_input_ids = topk_index.view(-1)[topk_cs_index][None] 
+
+            ss_token.append(topk_index)
+            bias1 = top_k if _ > 0 else 0
+            bias2 = max(0, _ - 1)
+            bias = 1 + top_k ** 2 * bias2 + bias1
+            parents = (topk_cs_index + bias)
+            parents_list.append(parents)
+           
+        scores_list = torch.cat(scores_list, dim=0).view(-1)
+        total_tokens = min(len(scores_list),total_tokens)
+        ss_token_list = torch.cat(ss_token, dim=0).view(-1)
+        top_scores = torch.topk(scores_list, total_tokens, dim=-1)
+        top_scores_index = top_scores.indices
+        top_scores_index = torch.sort(top_scores_index).values
+        draft_tokens = ss_token_list[top_scores_index]
+        draft_tokens = torch.cat((sample_token, draft_tokens), dim=0)
+
+        draft_parents = torch.cat(parents_list, dim=0)[top_scores_index // top_k].long()
+        mask_index = torch.searchsorted(top_scores_index, draft_parents-1, right=False) 
+
+        mask_index[draft_parents == 0] = -1
+        mask_index = mask_index + 1
+        mask_index_list = mask_index.tolist()
+
+        tree_mask = torch.eye(total_tokens + 1).bool()
+        tree_mask[:, 0] = True
+        for i in range(total_tokens):
+            tree_mask[i + 1].add_(tree_mask[mask_index_list[i]])
+
+        tree_position_ids = torch.sum(tree_mask, dim=1) - 1
+        tree_mask = tree_mask.float()[None, None]
+        draft_tokens = draft_tokens[None]
+        del parents_list, scores_list, ss_token, ss_token_list, draft_parents
+
+        max_depth = torch.max(tree_position_ids) + 1
+        noleaf_index = torch.unique(mask_index).tolist()
+        noleaf_num = len(noleaf_index) - 1
+        leaf_num = total_tokens - noleaf_num
+        retrieve_indices = torch.zeros(leaf_num, max_depth.item(), dtype=torch.long) - 1
+        retrieve_indices = retrieve_indices.tolist()
+        rid = 0
+        position_ids_list = tree_position_ids.tolist()
+
+        for i in range(total_tokens + 1):
+            if i not in noleaf_index:
+                cid = i
+                depth = position_ids_list[i]
+                for j in reversed(range(depth + 1)):
+                    retrieve_indices[rid][j] = cid
+                    cid = mask_index_list[cid - 1]
+                rid += 1
+        
+        retrieve_indices = torch.tensor(retrieve_indices, dtype=torch.long)
+        del mask_index, mask_index_list, noleaf_index, noleaf_num, leaf_num, max_depth, rid
+        tree_position_ids = tree_position_ids.to(device)
+
+        # delete sample token
+        tree_position_ids = tree_position_ids[1:]
+        tree_position_ids -= 1
+        tree_mask = tree_mask[:,:,1:,1:]
+        # retrieve_indices = retrieve_indices[:,1:]
+        draft_tokens_copy = draft_tokens.clone()
+        draft_tokens = draft_tokens[:,1:]
+
         # if streamer:
             # if isinstance(streamer, SpeculativeTextStreamer):
                 # print(colorama.Fore.LIGHTMAGENTA_EX, end="")
                 # streamer.put(draft_output_ids, is_draft=True)
         # verify model
+
         verify_results = forward_remainder(
             model,
-            prefill_token_ids,
-            prefill_inputs_embeds,
-            past_key_values,
-            past_key_value_shared,
-            exit_layer,
-            finalwipe_layer,
-            exit_query_cache,
+            input_ids,
+            inputs_embeds,
+            draft_tokens,
+            past_key_values_target,
+            wipe_layer,
             enable_pruning,
             keep_indexs,
-            keep_indexs_2,
             reduced_tokens,
+            tree_position_ids,
+            tree_mask,
+            image_tags,
         )
         logits = verify_results.logits
-        past_key_value_shared = verify_results.past_key_value_shared
-        if logits_processors:
-            logits = logits_processors(prefill_token_ids, logits)
-        past_key_values = verify_results.past_key_values
+        past_key_values_target = verify_results.past_key_values
         # change the prompt_length and prefill_length after fastv
         if keep_indexs is not None:
             logits_length = logits.shape[1]
-            prompt_length = logits_length - draft_output_ids.shape[1]
-            reduced_tokens = prefill_length - logits_length + draft_output_ids.shape[1]
-            prefill_length = logits_length - draft_output_ids.shape[1]
+            prompt_length = logits_length - draft_tokens.shape[1]
+            reduced_tokens = prefill_length - logits_length + draft_tokens.shape[1]
+            prefill_length = logits_length - draft_tokens.shape[1]
+
         # only select the logits relevant to what the draft has outputted.
-            
-        verification_logits = logits[:, prompt_length - 1:, :]
-
-        # There is a predicted token for every token in the draft output ids list, however note that the
-        # first tokens (or first N tokens) are coming from the prompt
-        verified_tokens, verified_probabilities = decode_next_token(logits=verification_logits, sample=sample, temperature=temperature, top_k=top_k, top_p=top_p)
-        # skip verification of the last token as it is a new token predicted from the main model
-        verified_tokens = verified_tokens.to(device)
-        # print(verified_tokens)
-        verified = draft_output_ids[:, :] == verified_tokens[:, :-1]
+        draft_tokens = torch.cat((draft_tokens, padding), dim=1)
         
-        # number of matches is the index of the number of tokens we are accepting from the draft
-        if not sample:
-            number_of_matches = ((~(verified)).cumsum(dim=-1) < 1).sum().item()
+        logits = logits[:,-draft_tokens.shape[1]:,:]
+        logits = logits[0, retrieve_indices]
+        retrieve_indices = retrieve_indices[:,1:]
+        candidates = draft_tokens_copy[0, retrieve_indices]
+        
+        posterior_mask = (
+            candidates.to(logits.device) == torch.argmax(logits[:, :-1], dim=-1)
+        ).int()
+        candidates_accept_length = (torch.cumprod(posterior_mask, dim=1)).sum(dim=1)
+        accept_length = candidates_accept_length.max()
+
+        # Choose the best candidate
+        if accept_length == 0:
+            # Default to the first candidate if none are accepted
+            best_candidate = torch.tensor(0, dtype=torch.long, device=candidates.device)
         else:
-            number_of_matches = 0
-            rand = torch.rand_like(draft_output_ids, dtype=torch.float)
-            for i in range(draft_output_ids.numel()):
-                if rand[0, i] < min(1, verified_probabilities[i, draft_output_ids[0, i]].item() / draft_probabilities[i][0, draft_output_ids[0, i]].item()):
-                    number_of_matches += 1
-                else:
-                    verified_tokens[0][number_of_matches] = torch.multinomial(max_fn((verified_probabilities[i, :] - draft_probabilities[i])), num_samples=1).item()
-                    break
+            best_candidate = torch.argmax(candidates_accept_length).to(torch.long)
 
-        input_ids = verified_tokens[:, number_of_matches : number_of_matches + 1]
+        sample_p = logits[best_candidate, accept_length]
 
-        output_ids.extend(draft_output_ids[0, : number_of_matches].tolist())
-        output_ids.extend(verified_tokens[0][number_of_matches : number_of_matches + 1].tolist())
+        select_indices = (
+            retrieve_indices[best_candidate, : accept_length]
+        )
+        select_indices = select_indices - 1
+
+        input_ids = candidates[None, best_candidate, : accept_length]
+        token = torch.argmax(sample_p)
+
+        token = token[None, None]
+        input_ids = torch.cat([input_ids, token],dim=1)
 
         # streamer = True
-        if streamer:
-            if isinstance(streamer, SpeculativeTextStreamer):
-                # streamer.delete(len(draft_output_ids[0, :]))
-                print(colorama.Fore.GREEN, end="")
-                # print(number_of_matches)
-                streamer.put(draft_output_ids[0, : number_of_matches])
-                print(colorama.Style.RESET_ALL, end="")
-                streamer.put(verified_tokens[0][number_of_matches : number_of_matches + 1])
-            else:
-                # streamer.put(torch.cat((draft_output_ids[0, : number_of_matches], verified_tokens[0][number_of_matches : number_of_matches + 1])))
-                streamer.put(torch.LongTensor(output_ids[len(output_ids)-number_of_matches-1:]))
-
-        # we want the entire output sequence + input sequence
+        # if streamer:
+        #     if isinstance(streamer, SpeculativeTextStreamer):
+        #         # streamer.delete(len(draft_output_ids[0, :]))
+        #         print(colorama.Fore.GREEN, end="")
+        #         # print(number_of_matches)
+        #         streamer.put(draft_output_ids[0, : number_of_matches])
+        #         print(colorama.Style.RESET_ALL, end="")
+        #         streamer.put(verified_tokens[0][number_of_matches : number_of_matches + 1])
+        #     else:
+        #         # streamer.put(torch.cat((draft_output_ids[0, : number_of_matches], verified_tokens[0][number_of_matches : number_of_matches + 1])))
+        #         streamer.put(torch.LongTensor(output_ids[len(output_ids)-number_of_matches-1:]))
 
         if enable_pruning:
-            past_key_values = crop_past_key_values(
-                past_key_values=past_key_values, 
-                maximum_length=prefill_length+reduced_tokens+len(output_ids) - 1,
-                exit_layer=exit_layer,
-                finalwipe_layer=finalwipe_layer,
-                length_after_fastv=prefill_length+attention_rank+len(output_ids) - 1,
-                length_after_fastv_2=prefill_length+len(output_ids) - 1
+            past_key_values_target = crop_past_key_values(
+                past_key_values=past_key_values_target, 
+                maximum_length=prefill_length+reduced_tokens+len(output_ids),
+                wipe_layer=wipe_layer,
+                attention_rank=attention_rank,
+                prefill_length=prefill_length+len(output_ids),
+                select_indices=select_indices,
+                enable_pruning=True
             )
-            past_key_value_shared = crop_past_key_value_cache( # draft
-                past_key_value=past_key_value_shared,
-                maximum_length=prefill_length+reduced_tokens+len(output_ids) - 1,
-                length_after_fastv=prefill_length+reduced_tokens+len(output_ids) - 1
+            past_key_values_draft = crop_past_key_values(
+                past_key_values=past_key_values_draft, 
+                maximum_length=prefill_length+reduced_tokens+len(output_ids),
+                wipe_layer=wipe_layer,
+                enable_pruning=False
             )
-
         else:
-            past_key_values = crop_past_key_values(
-                past_key_values=past_key_values, 
-                maximum_length=prefill_length+reduced_tokens+len(output_ids) - 1,
-                exit_layer=exit_layer
+            past_key_values_target = crop_past_key_values(
+                past_key_values=past_key_values_target, 
+                maximum_length=prefill_length+reduced_tokens+len(output_ids),
+                wipe_layer=wipe_layer,
+                select_indices=select_indices,
+                enable_pruning=False
             )
-            past_key_value_shared = crop_past_key_value_cache( # draft
-                past_key_value=past_key_value_shared,
-                maximum_length=prefill_length+reduced_tokens+len(output_ids) - 1,
+            past_key_values_draft = crop_past_key_values(
+                past_key_values=past_key_values_draft, 
+                maximum_length=prefill_length+reduced_tokens+len(output_ids),
+                wipe_layer=wipe_layer,
+                enable_pruning=False
             )
 
+        output_ids.extend(input_ids[0].tolist())
         return (
             input_ids,
             output_ids,
-            past_key_values,
-            past_key_value_shared,
-            number_of_matches,
-            draft_output_ids.numel(),
+            past_key_values_draft,
+            past_key_values_target,
+            accept_length,
+            num_speculations,
             prefill_length,
             reduced_tokens,
         )

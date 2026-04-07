@@ -6,7 +6,8 @@ from transformers import LlamaConfig
 from twigvlm.model.language_model.llama.modeling_llama import LlamaAttention, LlamaFlashAttention2, LlamaSdpaAttention, \
     LlamaRMSNorm, LlamaMLP
 from transformers import PreTrainedModel
-
+import torch.nn.functional as F
+import math
 class LlamaPreTrainedModel(PreTrainedModel):
     config_class = LlamaConfig
     base_model_prefix = "model"
@@ -93,6 +94,7 @@ class LlamaDecoderLayer(nn.Module):
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
+        output_qk: Optional[bool] = False,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -116,13 +118,14 @@ class LlamaDecoderLayer(nn.Module):
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights, present_key_value, qk_states = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask if self._attn_implementation != "eager" else attention_mask_eager,
             position_ids=position_ids,
             past_key_value=past_key_value,
             output_attentions=output_attentions,
             use_cache=use_cache,
+            output_qk=output_qk,
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -140,9 +143,12 @@ class LlamaDecoderLayer(nn.Module):
 
         if use_cache:
             outputs += (present_key_value,)
-
+        
+        if output_qk:
+            outputs += (qk_states,)
         return outputs
 
+from twigvlm.model.language_model.llama.pruning_head import Pruning_Head
 class LlamaModel(LlamaPreTrainedModel):
 
     def __init__(self, config: LlamaConfig):
@@ -164,7 +170,7 @@ class LlamaModel(LlamaPreTrainedModel):
         self._use_sdpa = config._attn_implementation == "sdpa"
         self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-
+        self.leaf_attention_module = Pruning_Head(config.num_attention_heads, config.hidden_size // config.num_attention_heads)
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
         self.post_init()

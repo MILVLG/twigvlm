@@ -121,15 +121,24 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             if twig is not None:
                 checkpoints = safetensors.torch.load_file(os.path.join(twig, "model.safetensors"))
                 twig_dict = {}
+
                 for k, v in checkpoints.items():
                     if k == "lm_head.weight":
                         twig_dict.update({"model.twig_head.weight":v})
                     elif k == "model.norm.weight":
                         twig_dict.update({"model.twig_norm.weight":v})
+                    elif k.startswith("leaf_proj"):
+                        twig_dict.update({"model."+k:v})
+                    elif k.startswith("leaf_attention_module"):
+                        twig_dict.update({"model."+k:v})
                     elif k.startswith("model.layers."):
                         twig_dict.update({"model.twig_layers."+k[13:]:v})
-                print("twig loading successfully")
                 result = model.load_state_dict(twig_dict, strict=False)
+                if len(result.unexpected_keys) == 0:
+                    print("twig loading successfully")
+                else:
+                    print(f"unexpected keys: {result.unexpected_keys}")
+                    exit
             ############################################################################
             #                           loading TwigVLM                                #
             ############################################################################

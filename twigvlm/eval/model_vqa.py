@@ -31,7 +31,7 @@ def eval_model(args):
     disable_torch_init()
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
-    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name, attn_implementation="flash_attention_2", twig=args.twig)
+    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name, attn_implementation="eager", twig=args.twig)
 
     questions = [json.loads(q) for q in open(os.path.expanduser(args.question_file), "r")]
     questions = get_chunk(questions, args.num_chunks, args.chunk_idx)
@@ -66,7 +66,7 @@ def eval_model(args):
 
         twigvlm_config = {
             "enable_pruning": True, 
-            "attention_rank": args.retained_tokens, # retain visual tokens
+            "avg_retain_rank": args.retained_tokens, # retain visual tokens
             "generation_strategy": "self_speculative" # self_speculative | autoregressive
         }
 
