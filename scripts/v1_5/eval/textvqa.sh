@@ -24,16 +24,14 @@ while getopts ":R:" opt; do
   esac
 done
 
-# MODEL_NAME="llava-v1.5-7b"
-# CKPT="TwigVLM-llava-v1.5-7b-K2-T3"
 MODEL_NAME="llava-v1.5-7b"
-CKPT="TwigVLM-leaf_modv7_7-lr1e-4-dynamic5-attnKL-stage2rl2v5_maxstep500-power2.0-group32-fdrop-fix"
+CKPT="TwigVLM-llava-v1.5-7b-K2-T3"
 SPLIT="text_vqa"
 
 for IDX in $(seq 0 $((CHUNKS-1))); do
     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python -m twigvlm.eval.model_vqa_loader \
-        --model-path /mnt/pfs-mc0p4k/cv/team/zhenglihao/llm_common/$MODEL_NAME \
-        --twig /mnt/pfs-mc0p4k/cv/team/wangmingyang/models/Twigv2/shaozw/labs/TwigRL/checkpoints/stage2_0122/$CKPT \
+        --model-path {path-dir}/$MODEL_NAME \
+        --twig {path-dir}/$CKPT \
         --retained_tokens $R \
         --question-file ./playground/data/eval/textvqa/llava_textvqa_val_v051_ocr.jsonl \
         --image-folder ./playground/data/eval/textvqa/train_images \

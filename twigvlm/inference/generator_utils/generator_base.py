@@ -6,7 +6,7 @@
 #
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 import torch
 import transformers
@@ -37,6 +37,7 @@ class ForwardResult:
     past_key_value_shared: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None
     exit_query_cache: Optional[List[torch.Tensor]] = None
     keep_indexs: Optional[torch.Tensor] = None
+    keep_indexs_2: Optional[torch.Tensor] = None
     attention_maps: Optional[torch.Tensor] = None
 
 
@@ -44,7 +45,7 @@ class ForwardResult:
 class GenerationConfig:
     max_steps: int = 512
     exit_layer: int = 2
-    num_speculations: int = 4
+    num_speculations: int = 5
     generation_strategy: str = "self_speculative"
     sample: bool = False
     temperature: float = 0
@@ -53,8 +54,8 @@ class GenerationConfig:
     no_repeat_ngram_size: int = None
     stop_words: List[str] = None
     enable_pruning: bool = False
-    wipe_layer: List[int] = field(default_factory=lambda: [2,24])
-    attention_rank: List[int] =  field(default_factory=lambda: [41,0])
+    attention_rank: int = 0
+    finalwipe_layer: int = 24
 
 
 class GenerationStrategy:

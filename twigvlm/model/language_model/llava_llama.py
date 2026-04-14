@@ -12,10 +12,8 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 import os, sys
-import importlib.util
 
 local_rank = os.environ.get("LOCAL_RANK", None)
-twig_stage = int(os.environ.get("twig_stage", 0))
 steps = []
 def rank0_print(*args):
     if local_rank == "0" or local_rank == 0 or local_rank is None:
@@ -28,24 +26,7 @@ import torch.nn as nn
 
 # from transformers import AutoConfig, AutoModelForCausalLM, \
 #                          LlamaConfig, LlamaModel, LlamaForCausalLM
-_llama_dir = os.path.join(os.path.dirname(__file__), "llama")
-if twig_stage in (1, 2):
-    _model_file = os.path.join(_llama_dir, f"modeling_llama_twig++_stage{twig_stage}.py")
-    rank0_print(f"[llava_llama] Loading stage{twig_stage} model from {_model_file}")
-    _pkg_name = "twigvlm.model.language_model.llama"
-    if _pkg_name not in sys.modules:
-        importlib.import_module(_pkg_name)
-    _mod_name = f"{_pkg_name}.modeling_llama_twig"
-    _spec = importlib.util.spec_from_file_location(_mod_name, _model_file)
-    _mod = importlib.util.module_from_spec(_spec)
-    _mod.__package__ = _pkg_name
-    sys.modules[_mod_name] = _mod
-    _spec.loader.exec_module(_mod)
-    LlamaConfig = _mod.LlamaConfig
-    LlamaModel = _mod.LlamaModel
-    LlamaForCausalLM = _mod.LlamaForCausalLM
-else:
-    from .llama.modeling_llama import LlamaConfig, LlamaModel, LlamaForCausalLM
+from .llama.modeling_llama import LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from ..llava_arch import LlavaMetaModel, LlavaMetaForCausalLM

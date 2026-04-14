@@ -65,8 +65,8 @@ def generate(
     generation_config.generation_strategy = twigvlm_config["generation_strategy"]
     generation_config.enable_pruning = twigvlm_config["enable_pruning"]
     generation_config.exit_layer = int(os.environ.get('twig_K'))
-    avg_retain_rank = twigvlm_config["avg_retain_rank"]
-    
+    attention_rank = twigvlm_config["attention_rank"]
+
     if "inputs_embeds" in kwargs:
         raise NotImplementedError("`inputs_embeds` is not supported")
     if images is not None:
@@ -85,11 +85,10 @@ def generate(
             None,
             None,
             images,
-            image_sizes
+            # image_sizes=image_sizes
         )
     else:
         inputs_embeds = self.get_model().embed_tokens(inputs)
-        inputs = None
 
     # compute the retained visual tokens
     base_T = len(self.model.layers)
@@ -97,10 +96,8 @@ def generate(
         visual_token_num = (image_tags == 1).sum().item()
     else:
         visual_token_num = 0
-        generation_config.enable_pruning = False
-    retain_rank_1st = math.ceil((base_T*avg_retain_rank-generation_config.wipe_layer[0]*visual_token_num)/(generation_config.wipe_layer[1]-generation_config.wipe_layer[0]))
-    
-    generation_config.attention_rank[0] = retain_rank_1st
+    attention_rank = math.ceil((base_T*attention_rank-generation_config.exit_layer*visual_token_num)/(generation_config.finalwipe_layer-generation_config.exit_layer))
+    generation_config.attention_rank = attention_rank
 
     if generation_config.generation_strategy == "autoregressive":
         generation_strategy: GenerationStrategyResult = AutoRegressiveGenerationStrategy()
