@@ -32,6 +32,7 @@ if local_rank != "0" and local_rank is not None:
     original_stderr = sys.stderr
     sys.stderr = errfile
 
+from copy import deepcopy
 import copy
 import time
 from dataclasses import dataclass, field
@@ -77,6 +78,8 @@ class ModelArguments:
     mm_use_im_start_end: bool = field(default=False)
     mm_use_im_patch_token: bool = field(default=True)
     mm_vision_select_feature: Optional[str] = field(default="patch")
+    mm_patch_merge_type: Optional[str] = field(default="flat")
+    twig_path: Optional[str] = field(default=None)
 
 
 @dataclass
@@ -953,19 +956,37 @@ def train():
                     if training_args.bf16 and module.weight.dtype == torch.float32:
                         module = module.to(torch.bfloat16)
 
-
+    model.build_leaf_attention_module()
+    model.get_model().bkb_layers = deepcopy(model.get_model().layers).to(model.device)
+    model.get_model().bkb_norm = deepcopy(model.get_model().norm).to(model.device)
+    
+    model.bkb_lm_head = deepcopy(model.lm_head).to(model.device)
     del model.get_model().layers[twig_K+twig_T:]
-    # model.get_model().layers = model.get_model().layers[:fork_layer+twig_T]
+
     model.requires_grad_(False)
     for n, p in model.named_parameters():
-        if 'lm_head.weight' == n:
+        if 'bkb' in n:
+            continue
+        if 'leaf' in n:
             p.requires_grad = True
-        if 'model.norm' in n:
-            p.requires_grad = True
-        for layer_i in range(twig_K, twig_K+twig_T):
-            if f'model.layers.{layer_i}' in n:
-                p.requires_grad = True
-
+    import safetensors
+    checkpoints = safetensors.torch.load_file(os.path.join(model_args.twig_path, "model.safetensors"))
+    state_dicts = {}
+    for k, v in checkpoints.items():
+        if k.startswith("model.layers.0."):
+            state_dicts.update({"model.layers.2."+k[15:]:v})
+        elif k.startswith("model.layers.1."):
+            state_dicts.update({"model.layers.3."+k[15:]:v})
+        elif k.startswith("model.layers.2."):
+            state_dicts.update({"model.layers.4."+k[15:]:v})
+        elif k == "model.norm.weight":
+            state_dicts.update({k:v})
+        elif k == "lm_head.weight":
+            state_dicts.update({k:v})
+        elif k.startswith("leaf_attention_module"):
+            state_dicts.update({k:v})
+    load_result = model.load_state_dict(state_dicts, strict=False)
+    rank0_print("Unexpected keys:", load_result.unexpected_keys)
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)
     # rank0_print("Training Args:", training_args)

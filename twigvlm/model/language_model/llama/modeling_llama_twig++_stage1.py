@@ -78,6 +78,15 @@ if is_torch_fx_available():
 
 logger = logging.get_logger(__name__)
 
+def find_first_index(vec, x):
+    mask = (vec == x)
+    indices = mask.nonzero()
+    
+    if indices.size(0) > 0:  
+        return indices[0].item() - 1  
+    else:
+        return -1  
+
 _CONFIG_FOR_DOC = "LlamaConfig"
 
 def _get_unpad_data(attention_mask):
@@ -109,7 +118,6 @@ def _make_causal_mask(
         input_ids_shape=input_ids_shape, dtype=dtype, device=device, past_key_values_length=past_key_values_length
     )
 
-
 class LlamaRMSNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-6):
         """
@@ -125,7 +133,6 @@ class LlamaRMSNorm(nn.Module):
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
         return self.weight * hidden_states.to(input_dtype)
-
 
 ALL_LAYERNORM_LAYERS.append(LlamaRMSNorm)
 
@@ -161,8 +168,8 @@ class LlamaRotaryEmbedding(nn.Module):
             self._set_cos_sin_cache(seq_len=seq_len, device=x.device, dtype=x.dtype)
 
         return (
-            self.cos_cached[:seq_len+3000].to(dtype=x.dtype),
-            self.sin_cached[:seq_len+3000].to(dtype=x.dtype),
+            self.cos_cached[:seq_len].to(dtype=x.dtype),
+            self.sin_cached[:seq_len].to(dtype=x.dtype),
         )
 
 
@@ -415,7 +422,7 @@ class LlamaAttention(nn.Module):
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         if output_qk:
-            qk_states = (query_states, key_states, hidden_states)
+            qk_states = (query_states, key_states)
         else:
             qk_states = None
 
@@ -492,6 +499,7 @@ class LlamaFlashAttention2(LlamaAttention):
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        output_qk: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         # LlamaFlashAttention2 attention does not support output_attentions
@@ -524,6 +532,11 @@ class LlamaFlashAttention2(LlamaAttention):
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
 
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+
+        if output_qk:
+            qk_states = (query_states, key_states, hidden_states)
+        else:
+            qk_states = None
 
         if past_key_value is not None:
             cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
@@ -571,7 +584,7 @@ class LlamaFlashAttention2(LlamaAttention):
         if not output_attentions:
             attn_weights = None
 
-        return attn_output, attn_weights, past_key_value
+        return attn_output, attn_weights, past_key_value, qk_states
 
     def _flash_attention_forward(
         self, query_states, key_states, value_states, attention_mask, query_length, dropout=0.0, softmax_scale=None
@@ -687,6 +700,7 @@ class LlamaSdpaAttention(LlamaAttention):
         past_key_value: Optional[Cache] = None,
         output_attentions: bool = False,
         use_cache: bool = False,
+        output_qk: bool = False,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         if output_attentions:
             # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
@@ -701,6 +715,7 @@ class LlamaSdpaAttention(LlamaAttention):
                 past_key_value=past_key_value,
                 output_attentions=output_attentions,
                 use_cache=use_cache,
+                output_qk=output_qk,
             )
 
         bsz, q_len, _ = hidden_states.size()
@@ -718,6 +733,11 @@ class LlamaSdpaAttention(LlamaAttention):
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+
+        if output_qk:
+            qk_states = (query_states, key_states)
+        else:
+            qk_states = None
 
         if past_key_value is not None:
             cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
@@ -747,7 +767,7 @@ class LlamaSdpaAttention(LlamaAttention):
 
         attn_output = self.o_proj(attn_output)
 
-        return attn_output, None, past_key_value
+        return attn_output, None, past_key_value, qk_states
 
 
 LLAMA_ATTENTION_CLASSES = {
@@ -763,7 +783,6 @@ class LlamaDecoderLayer(nn.Module):
         self.layer_idx = layer_idx
         self.hidden_size = config.hidden_size
 
-        # config._attn_implementation = "flash_attention_2"
         self.self_attn = LLAMA_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
 
         self.mlp = LlamaMLP(config)
@@ -778,6 +797,7 @@ class LlamaDecoderLayer(nn.Module):
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
+        output_qk: Optional[bool] = False,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -804,13 +824,14 @@ class LlamaDecoderLayer(nn.Module):
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.self_attn(
+        hidden_states, self_attn_weights, present_key_value, qk_states = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_value=past_key_value,
             output_attentions=output_attentions,
             use_cache=use_cache,
+            output_qk=output_qk,
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -828,6 +849,9 @@ class LlamaDecoderLayer(nn.Module):
 
         if use_cache:
             outputs += (present_key_value,)
+
+        if output_qk:
+            outputs += (qk_states,)
 
         return outputs
 
@@ -996,6 +1020,8 @@ class LlamaModel(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        bkb_layers=False,
+        output_qk: bool = False,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1063,9 +1089,10 @@ class LlamaModel(LlamaPreTrainedModel):
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
+        all_qk_states = () if output_qk else None
         next_decoder_cache = None
 
-        for decoder_layer in self.layers:
+        for decoder_layer in (self.bkb_layers if bkb_layers else self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -1087,6 +1114,7 @@ class LlamaModel(LlamaPreTrainedModel):
                     past_key_value=past_key_values,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
+                    output_qk=output_qk,
                 )
 
             hidden_states = layer_outputs[0]
@@ -1096,17 +1124,24 @@ class LlamaModel(LlamaPreTrainedModel):
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
+            
+            if output_qk:
+                all_qk_states += (layer_outputs[-1],)
 
-        hidden_states = self.norm(hidden_states)
         # add hidden states from the last decoder layer
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
+        if bkb_layers:
+            hidden_states = self.bkb_norm(hidden_states)
+        else:
+            hidden_states = self.norm(hidden_states)
 
         next_cache = None
         if use_cache:
             next_cache = next_decoder_cache.to_legacy_cache() if use_legacy_cache else next_decoder_cache
+
         if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns, all_qk_states] if v is not None)
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
@@ -1114,6 +1149,7 @@ class LlamaModel(LlamaPreTrainedModel):
             attentions=all_self_attns,
         )
 
+from .pruning_head import Pruning_Head
 
 class LlamaForCausalLM(LlamaPreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
@@ -1123,9 +1159,20 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         self.model = LlamaModel(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.step_id = 0
 
         # Initialize weights and apply final processing
         self.post_init()
+    
+    def reinit(self):
+        self.lm_head = nn.Linear(self.config.hidden_size, self.config.vocab_size, bias=False)
+        self.model.layers[-1] = LlamaDecoderLayer(self.config, len(self.model.layers))
+        self.model.norm = LlamaRMSNorm(self.config.hidden_size, eps=self.config.rms_norm_eps)
+    
+    # [leaf_attn v2 tag]
+    def build_leaf_attention_module(self):
+        print(f"Building Pruning Head with {self.config.num_attention_heads} heads and {self.config.hidden_size // self.config.num_attention_heads} d_head")
+        self.leaf_attention_module = Pruning_Head(self.config.num_attention_heads, self.config.hidden_size // self.config.num_attention_heads)
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -1192,7 +1239,32 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        alpha = float(os.environ.get("D_ALPHG", 0.2))
+        temperature = float(os.environ.get("D_TEMP", 5.0))
+        gamma = float(os.environ.get("A_GAMMA", 0.1))
+        a_b = int(os.environ.get("A_B", 17))
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        with torch.no_grad():
+            outputs = self.model(
+                input_ids=input_ids,
+                image_tags=image_tags,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                use_cache=use_cache,
+                output_attentions=False,
+                output_hidden_states=True,
+                return_dict=False,
+                bkb_layers=True,
+                output_qk=True,
+            )
+            target_hidden_states = outputs[0]
+
+            target_qk_list = outputs[-1]
+            target_qk = target_qk_list[a_b] if target_qk_list is not None else None
+
+
         outputs = self.model(
             input_ids=input_ids,
             image_tags=image_tags,
@@ -1201,19 +1273,118 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
+            output_attentions=False,
+            output_hidden_states=True,
+            return_dict=False,
+            bkb_layers=False,
+            output_qk=True,
         )
 
         hidden_states = outputs[0]
+        idx_all_hidden = 2 if use_cache else 1
+
+        qk_list = outputs[-1]
+        qk = qk_list[-1] if qk_list is not None else None
+    
         if self.config.pretraining_tp > 1:
             lm_head_slices = self.lm_head.weight.split(self.vocab_size // self.config.pretraining_tp, dim=0)
             logits = [F.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)]
             logits = torch.cat(logits, dim=-1)
         else:
             logits = self.lm_head(hidden_states)
+        # -------  predKL  ------------------------------------------------------
+            target_logits = self.bkb_lm_head(target_hidden_states)
+        
+
+        label_flags = (labels[..., 1:].contiguous() != -100)[..., None].expand(-1, -1, logits.shape[-1])
         logits = logits.float()
+        logits_r = logits[..., :-1, :].contiguous()[label_flags].view(-1, logits.shape[-1])
+        target_logits = target_logits.float()
+        target_logits_r = target_logits[..., :-1, :].contiguous()[label_flags].view(-1, logits.shape[-1])
+        
+        soft_targets_r = F.log_softmax(target_logits_r / temperature, dim=-1)
+    
+        kl_div = F.kl_div(
+            input=F.log_softmax(logits_r / temperature, dim=-1),
+            target=soft_targets_r,
+            # reduction='batchmean',
+            reduction='none',
+            log_target=True
+        ).sum(dim=-1) * (temperature ** 2) 
+
+        per = kl_div
+        CLIP = 4.
+        scale = torch.where(per.detach() > CLIP, CLIP / per.detach(), 1.0)
+        kl_div = (per * scale).mean() / CLIP
+
+        # -------  predKL  ------------------------------------------------------
+
+        # -------  attnKL  ------------------------------------------------------
+        attn_kl_div = torch.tensor(0.0, device=logits.device)
+        if 1 in image_tags:
+            do_kl = True
+            
+            def get_attn_score_mean_heads(qk_pair, tags):
+                if qk_pair is None:
+                    return None
+                q, k, _ = qk_pair
+
+                d_head = q.shape[-1]
+                batch_scores = []
+                for i in range(q.shape[0]):
+                    it = tags[i]
+                    q_idx = find_first_index(it, -3)
+                    k_mask = (it == 1)
+                    
+                    qi = q[i, :, q_idx, :]
+                    ki = k[i, :, k_mask, :]
+                    # (n_heads, n_img)
+                    logits = torch.matmul(qi.unsqueeze(1), ki.transpose(-1, -2)).squeeze(1).to(torch.float32) / math.sqrt(d_head)
+
+                    prob = F.softmax(logits, dim=-1)
+                    prob_mean_heads = prob.mean(dim=0)
+                    
+                    batch_scores.append(prob_mean_heads)
+                return batch_scores
+            
+            teacher_scores_heads = get_attn_score_mean_heads(target_qk, image_tags)
+            
+            if teacher_scores_heads is not None:
+                kl_losses = []
+                for i in range(len(teacher_scores_heads)):
+                    it = image_tags[i]
+                    q_idx = find_first_index(it, -3)
+                    k_mask = (it == 1)
+
+                    qi = qk[0][i, :, q_idx, :].unsqueeze(0)
+                    ki = qk[1][i, :, k_mask, :]
+                    xq = qk[2][i, q_idx, :].unsqueeze(0)
+                    xk = qk[2][i, k_mask, :]
+
+                    s_probs = self.leaf_attention_module(qi, ki, xq, xk)
+
+                    t_probs = teacher_scores_heads[i] # (n_img, )
+                    
+                    if s_probs is None or t_probs is None:
+                        continue
+                    
+                    s_log_probs = torch.log(s_probs + 1e-9)
+                    t_log_probs = torch.log(t_probs + 1e-9)
+                                     
+                    kl = F.kl_div(
+                        input=s_log_probs,
+                        target=t_log_probs,
+                        reduction='sum',
+                        log_target=True
+                    )# * (a_temperature ** 2)
+                    kl_losses.append(kl)
+                
+                if len(kl_losses) > 0:
+                    attn_kl_div = torch.stack(kl_losses).mean().bfloat16()
+        else:
+            do_kl = False
+            pass
+        # -------  attnKL  ------------------------------------------------------
 
         loss = None
         if labels is not None:
@@ -1226,7 +1397,17 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             shift_labels = shift_labels.view(-1)
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
-            loss = loss_fct(shift_logits, shift_labels)
+            ntp_loss = loss_fct(shift_logits, shift_labels)
+            
+            if not do_kl:
+                loss = ntp_loss
+                rank0_print(f'[0.0]', ntp_loss.item(), attn_kl_div.item(), kl_div.item())
+            else:
+                loss = ntp_loss + attn_kl_div * gamma
+                rank0_print(f'[{gamma:.2f}]', ntp_loss.item(), attn_kl_div.item(), kl_div.item())
+            
+            loss = loss + kl_div * alpha
+            self.step_id += 1
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -1234,10 +1415,10 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
         return CausalLMOutputWithPast(
             loss=loss,
-            logits=logits,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
+            logits=shift_logits,
+            # past_key_values=outputs.past_key_values,
+            # hidden_states=outputs.hidden_states,
+            # attentions=outputs.attentions,
         )
 
     def prepare_inputs_for_generation(

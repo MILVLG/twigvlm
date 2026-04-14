@@ -12,13 +12,6 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import os, sys
-
-local_rank = os.environ.get("LOCAL_RANK", None)
-
-def rank0_print(*args):
-    if local_rank == "0" or local_rank == 0 or local_rank is None:
-        print(*args)
 
 from abc import ABC, abstractmethod
 
@@ -30,6 +23,16 @@ from .multimodal_projector.builder import build_vision_projector
 
 from twigvlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
+from twigvlm.mm_utils import get_anyres_image_grid_shape
+
+def find_first_index(vec, x):
+    mask = (vec != x)
+    indices = mask.nonzero()
+    
+    if indices.size(0) > 0:  
+        return indices[0].item()  
+    else:
+        return -1  
 
 class LlavaMetaModel:
 
@@ -39,6 +42,11 @@ class LlavaMetaModel:
         if hasattr(config, "mm_vision_tower"):
             self.vision_tower = build_vision_tower(config, delay_load=True)
             self.mm_projector = build_vision_projector(config)
+
+            if 'unpad' in getattr(config, 'mm_patch_merge_type', ''):
+                self.image_newline = nn.Parameter(
+                    torch.empty(config.hidden_size, dtype=self.dtype)
+                )
 
     def get_vision_tower(self):
         vision_tower = getattr(self, 'vision_tower', None)
@@ -51,6 +59,7 @@ class LlavaMetaModel:
         mm_vision_select_layer = model_args.mm_vision_select_layer
         mm_vision_select_feature = model_args.mm_vision_select_feature
         pretrain_mm_mlp_adapter = model_args.pretrain_mm_mlp_adapter
+        mm_patch_merge_type = model_args.mm_patch_merge_type
 
         self.config.mm_vision_tower = vision_tower
 
@@ -73,10 +82,16 @@ class LlavaMetaModel:
         self.config.mm_hidden_size = vision_tower.hidden_size
         self.config.mm_vision_select_layer = mm_vision_select_layer
         self.config.mm_vision_select_feature = mm_vision_select_feature
+        self.config.mm_patch_merge_type = mm_patch_merge_type
 
         if getattr(self, 'mm_projector', None) is None:
-            # raise NotImplementedError
             self.mm_projector = build_vision_projector(self.config)
+
+            if 'unpad' in mm_patch_merge_type:
+                embed_std = 1 / torch.sqrt(torch.tensor(self.config.hidden_size, dtype=self.dtype))
+                self.image_newline = nn.Parameter(
+                    torch.randn(self.config.hidden_size, dtype=self.dtype) * embed_std
+                )
         else:
             # In case it is frozen by LoRA
             for p in self.mm_projector.parameters():
@@ -87,9 +102,38 @@ class LlavaMetaModel:
             def get_w(weights, keyword):
                 return {k.split(keyword + '.')[1]: v for k, v in weights.items() if keyword in k}
 
-            load_result = self.mm_projector.load_state_dict(get_w(mm_projector_weights, 'mm_projector'))
-            rank0_print("Unexpected keys:", load_result.unexpected_keys)
-            rank0_print("Missing keys:", load_result.missing_keys)
+            self.mm_projector.load_state_dict(get_w(mm_projector_weights, 'mm_projector'))
+
+
+def unpad_image(tensor, original_size):
+    """
+    Unpads a PyTorch tensor of a padded and resized image.
+
+    Args:
+    tensor (torch.Tensor): The image tensor, assumed to be in CxHxW format.
+    original_size (tuple): The original size of PIL image (width, height).
+
+    Returns:
+    torch.Tensor: The unpadded image tensor.
+    """
+    original_width, original_height = original_size
+    current_height, current_width = tensor.shape[1:]
+
+    original_aspect_ratio = original_width / original_height
+    current_aspect_ratio = current_width / current_height
+
+    if original_aspect_ratio > current_aspect_ratio:
+        scale_factor = current_width / original_width
+        new_height = int(original_height * scale_factor)
+        padding = (current_height - new_height) // 2
+        unpadded_tensor = tensor[:, padding:current_height - padding, :]
+    else:
+        scale_factor = current_height / original_height
+        new_width = int(original_width * scale_factor)
+        padding = (current_width - new_width) // 2
+        unpadded_tensor = tensor[:, :, padding:current_width - padding]
+
+    return unpadded_tensor
 
 
 class LlavaMetaForCausalLM(ABC):
@@ -107,31 +151,67 @@ class LlavaMetaForCausalLM(ABC):
         return image_features
 
     def prepare_inputs_labels_for_multimodal(
-        self, input_ids, position_ids, attention_mask, past_key_values, labels, images
+        self, input_ids, position_ids, attention_mask, past_key_values, labels,
+        images, image_sizes=None
     ):
         vision_tower = self.get_vision_tower()
-        # rank0_print("images", images.shape)
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
-            if past_key_values is not None and vision_tower is not None and images is not None and input_ids.shape[1] == 1:
-                target_shape = past_key_values[-1][-1].shape[-2] + 1
-                attention_mask = torch.cat((attention_mask, torch.ones(
-                    (attention_mask.shape[0], target_shape - attention_mask.shape[1]),
-                    dtype=attention_mask.dtype,
-                    device=attention_mask.device
-                )), dim=1)
-                position_ids = torch.sum(attention_mask, dim=1).unsqueeze(-1) - 1
             return input_ids, None, position_ids, attention_mask, past_key_values, None, labels
 
+        L1 = L2 = None 
         if type(images) is list or images.ndim == 5:
+            if type(images) is list:
+                images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)
             image_features = self.encode_images(concat_images)
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
-            image_features = [x.flatten(0, 1).to(self.device) for x in image_features]
+            mm_patch_merge_type = getattr(self.config, 'mm_patch_merge_type', 'flat')
+            image_aspect_ratio = getattr(self.config, 'image_aspect_ratio', 'square')
+            if mm_patch_merge_type == 'flat':
+                image_features = [x.flatten(0, 1) for x in image_features]
+            elif mm_patch_merge_type.startswith('spatial'):
+                new_image_features = []
+                for image_idx, image_feature in enumerate(image_features):
+                    if image_feature.shape[0] > 1:
+                        base_image_feature = image_feature[0]
+                        image_feature = image_feature[1:]
+                        height = width = self.get_vision_tower().num_patches_per_side
+                        assert height * width == base_image_feature.shape[0]
+                        if image_aspect_ratio == 'anyres':
+                            num_patch_width, num_patch_height = get_anyres_image_grid_shape(image_sizes[image_idx], self.config.image_grid_pinpoints, self.get_vision_tower().config.image_size)
+                            image_feature = image_feature.view(num_patch_height, num_patch_width, height, width, -1)
+                        else:
+                            raise NotImplementedError
+                        if 'unpad' in mm_patch_merge_type:
+                            image_feature = image_feature.permute(4, 0, 2, 1, 3).contiguous()
+                            image_feature = image_feature.flatten(1, 2).flatten(2, 3)
+                            image_feature = unpad_image(image_feature, image_sizes[image_idx])
+                            image_feature = torch.cat((
+                                image_feature,
+                                self.model.image_newline[:, None, None].expand(*image_feature.shape[:-1], 1).to(image_feature.device)
+                            ), dim=-1)
+                            L2 = image_feature.shape[2]
+                            image_feature = image_feature.flatten(1, 2).transpose(0, 1)
+                        else:
+                            image_feature = image_feature.permute(0, 2, 1, 3, 4).contiguous()
+                            image_feature = image_feature.flatten(0, 3)
+                        L1 = base_image_feature.shape[0]
+                        # print(L1, L2)
+                        image_feature = torch.cat((base_image_feature, image_feature), dim=0)
+                    else:
+                        image_feature = image_feature[0]
+                        if 'unpad' in mm_patch_merge_type:
+                            image_feature = torch.cat((
+                                image_feature,
+                                self.model.image_newline[None].to(image_feature.device)
+                            ), dim=0)
+                    new_image_features.append(image_feature)
+                image_features = new_image_features
+            else:
+                raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
         else:
-            image_features = self.encode_images(images).to(self.device)
-        # if local_rank == "0" or local_rank == 0 or local_rank is None:
-        #     torch.save(image_features, "image_features.pt")
+            image_features = self.encode_images(images)
 
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False):
@@ -153,14 +233,16 @@ class LlavaMetaForCausalLM(ABC):
         if labels is None:
             labels = torch.full_like(input_ids, IGNORE_INDEX)
 
-        # remove the padding using attention_mask -- TODO: double check
+        # remove the padding using attention_mask -- FIXME
+        _input_ids = input_ids
         input_ids = [cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)]
         labels = [cur_labels[cur_attention_mask] for cur_labels, cur_attention_mask in zip(labels, attention_mask)]
 
         new_input_embeds = []
         new_labels = []
-        new_image_tags = []
         cur_image_idx = 0
+        
+        new_image_tags = []
         pure_text = True
         for batch_idx, cur_input_ids in enumerate(input_ids):
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
@@ -171,7 +253,9 @@ class LlavaMetaForCausalLM(ABC):
                 cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
                 new_input_embeds.append(cur_input_embeds)
                 new_labels.append(labels[batch_idx])
-                new_image_tags.append(torch.zeros(cur_input_embeds.shape[0], dtype=torch.int32, device=cur_input_embeds.device))
+                cnit = torch.full((cur_input_embeds.shape[0],), -2, dtype=torch.int32, device=cur_input_embeds.device)
+                cnit[find_first_index(labels[batch_idx], -100):] = -3
+                new_image_tags.append(cnit)
                 # new_image_tags.append(torch.where(
                 #     new_labels[-1] == IGNORE_INDEX,  
                 #     torch.full_like(new_labels[-1], -1, dtype=torch.int32, device=cur_input_embeds.device),
@@ -180,7 +264,7 @@ class LlavaMetaForCausalLM(ABC):
                 #     # device=cur_input_embeds.device
                 # ))
                 cur_image_idx += 1
-                continue
+                continue 
             else:
                 pure_text = False
 
@@ -196,25 +280,33 @@ class LlavaMetaForCausalLM(ABC):
             cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)
             cur_new_input_embeds = []
             cur_new_labels = []
+
             cur_new_image_tags = []
-            assert num_images == 1
             for i in range(num_images + 1):
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
                 cur_new_labels.append(cur_labels_noim[i])
-                # [Edited by zhenwei - 2024-12-02 14:26]
-                cur_new_image_tags.append(torch.full((cur_input_embeds_no_im[i].shape[0],), -(i+1), device=cur_input_embeds_no_im[i].device, dtype=cur_input_embeds_no_im[i].dtype))
+                cnit = torch.full((cur_input_embeds_no_im[i].shape[0],), -(i+1), device=cur_input_embeds_no_im[i].device, dtype=cur_input_embeds_no_im[i].dtype)
+                if i == num_images: # means after last image
+                    cnit[find_first_index(cur_labels_noim[i], -100):] = -(i+2)
+                cur_new_image_tags.append(cnit)
                 if i < num_images:
                     cur_image_features = image_features[cur_image_idx]
                     cur_image_idx += 1
                     cur_new_input_embeds.append(cur_image_features)
                     cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
-                    # [Edited by zhenwei - 2024-12-02 14:26]
-                    cur_new_image_tags.append(torch.full((cur_image_features.shape[0],), (i+1), device=cur_input_embeds_no_im[i].device, dtype=cur_input_embeds_no_im[i].dtype))
+                    _tags = torch.full((cur_image_features.shape[0],), (i+1), device=cur_input_embeds_no_im[i].device, dtype=cur_input_embeds_no_im[i].dtype)
+                    if L1 is not None:
+                        # for _ in range(L1, cur_image_features.shape[0]):
+                            # _tags[_] = i+2
+                        p = L1 - 1 + L2
+                        while p < _tags.shape[0]:
+                            _tags[p] = 2
+                            p += L2
+                    cur_new_image_tags.append(_tags)
+            
+            cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]
 
             cur_new_input_embeds = torch.cat(cur_new_input_embeds)
-            # if local_rank == "0" or local_rank == 0 or local_rank is None:
-            #     with open("input_embeds.txt", "a") as f:
-            #         print(cur_new_input_embeds.shape, file=f)
             cur_new_labels = torch.cat(cur_new_labels)
             cur_new_image_tags = torch.cat(cur_new_image_tags)
 
@@ -257,14 +349,11 @@ class LlavaMetaForCausalLM(ABC):
                 ), dim=0))
                 if cur_len > 0:
                     new_labels_padded[i, :cur_len] = cur_new_labels
-                    new_image_tags_padded[i, :cur_len] = new_image_tags[i]
                     attention_mask[i, :cur_len] = True
+                    new_image_tags_padded[i, :cur_len] = new_image_tags[i]
                     position_ids[i, :cur_len] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
 
         new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
-        # with open(f"logs/len2_{local_rank}.txt", "a") as f:
-        #     print(new_input_embeds.shape[1], file=f)
-
         if _labels is None:
             new_labels = None
         else:
@@ -277,6 +366,7 @@ class LlavaMetaForCausalLM(ABC):
 
         if _position_ids is None:
             position_ids = None
+
         image_tags = new_image_tags_padded
         if pure_text:
             image_tags = None
