@@ -1171,7 +1171,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
     
     # [leaf_attn v2 tag]
     def build_leaf_attention_module(self):
-        print(f"Building leaf attention module with {self.config.num_attention_heads} heads and {self.config.hidden_size // self.config.num_attention_heads} d_head")
+        print(f"Building Pruning Head with {self.config.num_attention_heads} heads and {self.config.hidden_size // self.config.num_attention_heads} d_head")
         self.leaf_attention_module = Pruning_Head(self.config.num_attention_heads, self.config.hidden_size // self.config.num_attention_heads)
 
     def get_input_embeddings(self):

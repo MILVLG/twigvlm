@@ -78,6 +78,7 @@ class ModelArguments:
     mm_use_im_start_end: bool = field(default=False)
     mm_use_im_patch_token: bool = field(default=True)
     mm_vision_select_feature: Optional[str] = field(default="patch")
+    mm_patch_merge_type: Optional[str] = field(default="flat")
     twig_path: Optional[str] = field(default=None)
 
 
@@ -955,7 +956,7 @@ def train():
                     if training_args.bf16 and module.weight.dtype == torch.float32:
                         module = module.to(torch.bfloat16)
 
-
+    model.build_leaf_attention_module()
     model.get_model().bkb_layers = deepcopy(model.get_model().layers).to(model.device)
     model.get_model().bkb_norm = deepcopy(model.get_model().norm).to(model.device)
     

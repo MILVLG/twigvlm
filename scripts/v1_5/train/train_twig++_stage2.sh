@@ -11,12 +11,12 @@ export NUM_GROUPS=32
 export POWER=2.0
 export A_B=19
 export A_GAMMA=1.0
+export MAX_STEPS=500
 
 DATA_PATH="{dir}/llava_v1_5_mix665k.json"
 IMAGE_FOLDER="{dir}/dataset_images"
 MODEL_NAME_OR_PATH="liuhaotian/llava-v1.5-7b"  # "{local_dir}/llava-v1.5-7b"
 TWIG_STAGE1_PATH="./checkpoints/TwigVLM++-stage1-llava1.5-7b-K${twig_K}-T${twig_T}"
-MAX_STEPS=500
 
 start_time=$(date +%s)
 

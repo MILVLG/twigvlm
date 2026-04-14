@@ -1,125 +1,201 @@
-# TwigVLM
+# TwigVLM++: Growing a Multi-head Twig via Distillation and Reinforcement Learning to Accelerate Large Vision-Language Models
 
-This repository contains the official code of our [paper](https://arxiv.org/abs/2503.14075) accepted at ICCV 2025. TwigVLM is a general and effective framework that accelerates large visual language models (LVLMs) by “growing” a lightweight twig block on top of an early layer of the base VLM.
+This repository contains the official implementation of **TwigVLM** (ICCV 2025) and its extended variant **TwigVLM++** . TwigVLM is a general and effective framework that accelerates large vision-language models (VLMs) by "growing" a lightweight *twig* block upon an early layer of the base VLM. TwigVLM++ further extends this with a novel **multi-head twig architecture**, a **two-stage training paradigm** combining distillation and reinforcement learning, and a **tree-based self-speculative decoding** strategy.
 
-Compared to existing VLM acceleration methods that are purely based on visual token pruning, our TwigVLM not only retains better accuracy by employing a twig-guided token pruning (TTP) strategy, but also achieves higher generation speed by utilizing a self-speculative decoding (SSD) strategy. More specifically, the LLaVA-1.5-7B model with our TwigVLM can retain 96% of the original performance when 88.9% of visual tokens are pruned, and achieves a 154% improvement in generation speed, which establishes a new state-of-the-art in terms of both accuracy retention and generation speed in the field of VLM acceleration.
+<table align="center"><tr>
+<td><img src="./assets/fig1.png" alt="TwigVLM++" width="400px"></td>
+<td><img src="./assets/fig10.png" alt="TwigVLM++" width="440px"></td>
+</tr></table>
 
-<p align="center" width="100%">
-<img src="./assets/fig1.png" alt="TwigVLM" style="width: 100%; min-width: 300px; display: block; margin: auto;">
-</p>
+## Overview
+
+Most existing VLM acceleration methods are purely based on visual token pruning, and suffer from two key limitations:
+1. **Accuracy drop**: Attention maps in early layers are insensitive to the task, leading to poor token selection quality.
+2. **Limited decoding speedup**: Token pruning only accelerates the prefilling stage, but the decoding stage dominates inference time for long responses.
+
+**TwigVLM** addresses both limitations in a unified framework:
+- **Twig-Guided Token Pruning (TTP)**: Uses the attention map from the last twig layer (closer to the prediction head) to guide more precise token pruning.
+- **Self-Speculative Decoding (SSD)**: The shallow twig model acts as a draft model, enabling parallel verification by the deep base model for accelerated generation.
+
+**TwigVLM++** further improves upon TwigVLM by:
+- **Multi-head Twig Architecture**: Decouples token pruning (P-Head) from next-token prediction (D-Head), enabling targeted optimization of each task.
+- **Two-Stage Training Paradigm**: Stage 1 trains the twig block via distillation learning (NTP + PredKL + AttnKL losses); Stage 2 optimizes the pruning head via GRPO-style reinforcement learning with a dynamic pruning-ratio schedule.
+- **Tree-based SSD**: Replaces the original sequence-based SSD with a token tree strategy, increasing accepted tokens per verification step for higher decoding throughput.
+- TwigVLM++ outperforms TwigVLM by **+1.7% accuracy** and **+43% generation speed** under the same settings.
+
+<!-- ### Key Results (LLaVA-1.5-7B, 88.9% token pruning)
+
+| Method | RelAcc | Generation Speed |
+|:------:|:------:|:---------------:|
+| FastV | 77.0% | 40.9 tok/s |
+| TwigVLM | 96.0% | 60.2 tok/s |
+| **TwigVLM++** | **97.7%** | **77.3 tok/s** | -->
+
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
 - [Training](#training)
+  - [Stage 1: Distillation Learning](#stage-1-distillation-learning)
+  - [Stage 2: Reinforcement Learning](#stage-2-reinforcement-learning)
 - [Evaluation](#evaluation)
 - [Demo](#demo)
+- [Results](#results)
 - [License](#license)
-- [About us](#about-us)
+- [About Us](#about-us)
 - [Citation](#citation)
-  
-<!-- ## News
-- July 5, 2025: Training and evaluation codes of the `TwigVLM` model are released. -->
-
 
 ## Prerequisites
-0. To train the models, you will need a server with **at least 4 GPUs**, each with **more than 40GB of memory** (e.g., 4×NVIDIA A6000). For inference or testing, **a single GPU with >40GB memory** is sufficient.
-1. Clone this repository and navigate to the folder:
-``` shell
-git clone https://github.com/MILVLG/twigvlm.git
-cd twigvlm
+
+0. **Hardware requirements**: Training requires a server with **at least 4 GPUs**, each with **more than 40GB memory** (e.g., 8×NVIDIA A100). For inference or evaluation, **a single GPU with >40GB memory** is sufficient.
+
+1. Clone this repository:
+```shell
+git clone -b twigvlm++ https://github.com/MILVLG/twigvlm.git
+cd twigvlm++
 ```
-2. Prepare the software environment. We recommend using [Anaconda](https://www.anaconda.com/) to create a new environment for the project, and install the requirements with the following commands:
-``` shell
-conda create -n twigvlm python=3.10 -y
-conda activate twigvlm
+
+2. Create and activate the conda environment:
+```shell
+conda create -n twigvlm++ python=3.10 -y
+conda activate twigvlm++
 pip install -r requirements.txt
 pip install flash-attn==2.3.2 --no-build-isolation
-``` 
-3. Please note that **SDPA** is currently unsupported. We recommend using **FlashAttention-2** as the preferred backend. If FlashAttention-2 cannot be installed, the **eager** implementation can be used as a fallback option.
-<!-- 3. Download the pretrained base models (i.e., Phi-2 and SigLIP) to your local directories. (optional)
-``` shell
-python scripts/download_models.py
 ```
-The base models will be stored in `checkpoints/base` in default.
-```
-checkpoints
-└── base
-    └── siglip-so400m-patch14-384
-    └── phi-2
-``` -->
 
+> **Note**: **FlashAttention2** can only be applied during the training phase. Due to its incompatibility with tree-based speculative decoding, the inference stage must rely on the **eager** mode for execution.
+
+3. Prepare the base model and training data. Download [LLaVA-1.5-7B](https://huggingface.co/liuhaotian/llava-v1.5-7b) and the [LLaVA-665K training data](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#visual-instruction-tuning) following the original [LLaVA project](https://github.com/haotian-liu/LLaVA). Set the paths in the training scripts accordingly.
 
 ## Training
 
-This section provides the instructions for training the TwigVLM for the LLaVA-1.5-7B model. Please refer to the original [LLaVA project](https://github.com/haotian-liu/LLaVA) to prepare the training data [here](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#visual-instruction-tuning) and the base model [LLaVA-1.5-7b](https://huggingface.co/haotian-liu/LLaVA-1.5-7b). After that, you can use the following script to train the TwigVLM:
+TwigVLM++ uses a **two-stage training paradigm**. Only the lightweight twig block (and its heads) are trained while the base VLM is kept frozen, consuming only ~10% of the training time compared to training the full base model.
 
-``` shell
-# Training the twig block
-twig_K=2 twig_T=3 bash scripts/v1_5/train_twig.sh
+### Stage 1: Twig Training via Distillation Learning
+
+In the first stage, the multi-head twig block (D-Head + P-Head) is trained using:
+- **NTP loss** (L_NTP): Standard autoregressive next-token prediction loss
+- **PredKL loss** (L_PredKL, α=0.1): KL divergence between the twig (draft) and base model's next-token prediction distributions. Improves alignment between shallow and deep models.
+- **AttnKL loss** (L_AttnKL, γ=1.0): KL divergence between the base model's attention map (at a designated deep layer) and the P-Head's importance scores. Directly supervises the pruning signal.
+
+Key hyperparameters:
+- `twig_K=2`: Layer position where the twig block is inserted
+- `twig_T=3`: Number of twig layers
+- `A_B=19`: The deep layer index used for AttnKL supervision
+- `D_ALPHG=0.1`: Weight for PredKL loss (α)
+- `A_GAMMA=1.0`: Weight for AttnKL loss (γ)
+
+```shell
+bash scripts/v1_5/train/train_twig++_stage1.sh
 ```
 
-where `twig_K` and `twig_T` are the position of the twig block and the number of twig layers, respectively (see the paper for details). 
+The trained checkpoint is saved to `./checkpoints/TwigVLM++-stage1-llava1.5-7b-K2-T3` by default.
 
-The trained checkpoints will be stored in `./checkpoints/TwigVLM-llava1.5-7b-K2-T3` by default. The trained TwigVLM model (only the learned twig block) is available at [here](https://awma1-my.sharepoint.com/:u:/g/personal/yuz_l0_tn/EeMoUa43kk5CrClb6qGsXgkBDfoZtK4EFO7nPnB8Ma6hQA?download=1).
+### Stage 2: Pruning Optimization via Reinforcement Learning
 
+You can download stage2 datasets at [here]().
+
+In the second stage, only the **P-Head** parameters are updated via GRPO-style reinforcement learning to directly maximize post-pruning model performance. This stage:
+- Re-uses the SFT dataset from Stage 1 but only needs ~10% of training samples (50K)
+- Samples G=32 pruning actions per training sample and computes group-normalized advantages
+- Adopts a **dynamic pruning-ratio schedule** (R ∈ {64, 85, 107, 128, 149, 171, 192}) with a curriculum-based annealing strategy, enabling a single trained model to support different pruning ratios at test time
+
+Key hyperparameters:
+- `NUM_GROUPS=32`: Number of sampled pruning actions per sample (G)
+- `MAX_STEPS=500`: Total RL training steps (~50K samples)
+- `POWER=2.0`: Annealing speed parameter (p) for the curriculum schedule
+
+```shell
+bash scripts/v1_5/train/train_twig++_stage2.sh
+```
+
+The trained checkpoint is saved to `./checkpoints/TwigVLM++-stage2-llava1.5-7b-K2-T3` by default.
+
+The trained TwigVLM model (above stage1 and stage2 checkpoints) is available at [stage1](https://awma1-my.sharepoint.com/:u:/g/personal/yuz_l0_tn/IQCmPEXJFa2PSa-U4id07TZ7AWfxSdeYh_1nHfH-Ff9wxjM?download=1) and [stage2](https://awma1-my.sharepoint.com/:u:/g/personal/yuz_l0_tn/IQAScfR3uwRVS4FSBbl_KCdxAWEYScXKw7l536SLr7HmVcA?download=1).
 ## Evaluation
 
-This section provides the instructions for evaluating the TwigVLM and reproducing the results with LLaVA-1.5-7B reported in the paper. Before preparing task-specific data, you should download [eval.zip](https://drive.google.com/file/d/1atZSBBrAX54yYpxtVVW33zFvcnaHeFPy/view?usp=sharing) and unzip it to `./playground/data/eval`. For more specific instructions, please take a look at [LLaVA's Evaluation.md](https://github.com/haotian-liu/LLaVA/blob/main/docs/Evaluation.md). 
+Download the evaluation data by following [LLaVA's Evaluation.md](https://github.com/haotian-liu/LLaVA/blob/main/docs/Evaluation.md). Download [eval.zip](https://drive.google.com/file/d/1atZSBBrAX54yYpxtVVW33zFvcnaHeFPy/view?usp=sharing) and unzip it to `./playground/data/eval`.
 
-Example for evaluating GQA benchmark, where `-R` is the average number of retained visual tokens:
-```
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7  twig_K=2 twig_T=3 bash scripts/v1_5/eval/gqa.sh  -R 192
-```
+All evaluation scripts accept `-R` to specify the **average number of retained visual tokens**.
 
-Using our provided model, you can reproduce the following results in `R=192`. 
-| Models | GQA | MME | MMBench | SQA(IMG) | TextVQA | VQAv2  | RelAcc |
-|:--------:|:----:|:----:|:--------:|:--------:|:-----:|:----:|:-------:|
-| [SparseVLM](https://github.com/Gumpest/SparseVLMs) | 57.6 | 1721 | 62.5 | 69.1 | 56.1 | 75.6 | 95.7% |
-| [MustDrop](https://github.com/liuting20/MustDrop) | 58.2	| 1787 | 62.3 |	**69.2** | 56.5	| 76 | 96.6% |
-| [VisionZip](https://github.com/dvlab-research/VisionZip) | 59.3 | 1783 |63 | 68.9	| 57.3 | 76.8	| 97.4% |
-| [VisionZip*](https://github.com/dvlab-research/VisionZip) | 60.1	| 1834 | 63.4 | 68.2 | 57.8 |	77.4 | 98.3% |
-| [**TwigVLM**](#) | **61.2** | **1848**| **64** | 68.9 | **58**  | **78.1** | **99.2%** |
+**GQA** (visual reasoning):
+```shell
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 bash scripts/v1_5/eval/gqa.sh -R 192
 
-Example for evaluating generation speed:
 ```
-CUDA_VISIBLE_DEVICES=0  twig_K=2 twig_T=3 bash scripts/v1_5/eval/mmvet.sh  -R 64
-```
-Running on an `RTX 4090` GPU, the average generation speed is about 60.6 tokens/s. Note that different GPUs may exhibit fluctuations when handling parallel computations.
-
 
 ## Demo
 
-To test some cases, you can use the provided `cli_demo.py` script. This script allows you to interactively ask questions about an image using the TwigVLM model.
+To run an interactive demo with the TwigVLM/TwigVLM++ model:
 
-```Python
+```python
 python cli_demo.py \
     --base-model liuhaotian/llava-v1.5-7b \
     --twig-block "TwigVLM-llava-v1.5-7b-K2-T3" \
     --twig-K 2 \
     --twig-T 3 \
-    --stream \
+    --R 64 \
     --image-file "./assets/image.png"
 ```
 
-The generation process is demonstrated in the following GIF image. The tokens in green are generated by the draft model.
+## Results
 
-<p align="center" width="100%">
-<img src="./assets/demo.gif" alt="Stanford-Alpaca" style="width: 100%; min-width: 300px; display: block; margin: auto;">
-</p>
+### Accuracy Comparisons on LLaVA-1.5-7B
 
+| Method | GQA | MMB | MME | TextVQA | SQA | VQAv2 | RelAcc |
+|:------:|:---:|:---:|:---:|:-------:|:---:|:-----:|:------:|
+| *Upper Bound (576 tokens)* | 61.9 | 64.7 | 1862 | 58.2 | 69.5 | 78.5 | 100% |
+| **Retain Averaged 192 Tokens (↓ 66.7%)** |
+| FastV | 56.5 | 63.7 | 1786 | 57.3 | 69.5 | 74.6 | 96.5% |
+| VisionZip | 59.3 | 63.0 | 1783 | 57.3 | 68.9 | 76.8 | 97.4% |
+| TwigVLM | 61.2 | 64.0 | 1848 | 58.0 | 68.8 | 78.1 | 99.2% |
+| **TwigVLM++** | **61.2** | **64.3** | **1868** | **58.0** | **69.2** | **78.2** | **99.6%** |
+| **Retain Averaged 128 Tokens (↓ 77.8%)** |
+| FastV | 53.0 | 61.4 | 1646 | 56.0 | 69.5 | 69.2 | 92.2% |
+| VisionZip | 57.6 | 62.0 | 1762 | 56.8 | 68.9 | 75.6 | 96.1% |
+| TwigVLM | 60.6 | 63.5 | 1818 | 57.8 | 69.5 | 77.9 | 98.7% |
+| **TwigVLM++** | **60.8** | **63.7** | **1856** | **58.0** | **69.5** | **77.9** | **99.2%** |
+| **Retain Averaged 64 Tokens (↓ 88.9%)** |
+| FastV | 44.1 | 45.9 | 1218 | 50.7 | 70.0 | 52.0 | 77.0% |
+| VisionZip | 55.1 | 60.1 | 1690 | 55.5 | 69.0 | 72.4 | 93.3% |
+| TwigVLM | 58.8 | 60.4 | 1760 | 55.8 | 70.0 | 75.6 | 96.0% |
+| **TwigVLM++** | **59.7** | **63.2** | **1801** | **56.7** | **69.5** | **76.8** | **97.7%** |
+
+### Generation Speed Comparisons on LLaVA-1.5-7B
+
+| Method | TextVQA (short) | MM-Vet (long) |
+|:------:|:--------------:|:-------------:|
+| LLaVA-1.5-7B | 27.8 tok/s | 39.8 tok/s |
+| FastV (R̄=64) | 30.5 tok/s | 41.5 tok/s (104%) |
+| VisionZip (R̄=64) | 30.4 tok/s | 41.5 tok/s (106%) |
+| TwigVLM (R̄=64) | 29.2→**30.4** tok/s (128%) | **60.2 tok/s (154%)** |
+| **TwigVLM++ (R̄=64)** | **33.0 tok/s (139%)** | **77.3 tok/s (197%)** |
+
+### Results on Qwen2.5-VL-7B
+
+TwigVLM++ substantially outperforms VisionZip on the stronger Qwen2.5-VL-7B model:
+
+| Method | RelAcc (88.9% pruning) | RelSpd |
+|:------:|:---------------------:|:------:|
+| FastV | 76.7% | 104.3% |
+| VisionZip | 88.4% | 107.1% |
+| TwigVLM | 86.0% | 152.3% |
+| **TwigVLM++** | **94.4%** | **193.2%** |
 
 ## License
+
 This project is licensed under the Apache License 2.0 - see the [LICENSE](https://www.apache.org/licenses/LICENSE-2.0) file for details.
 
-## About us
-This project is maintained by the [MILVLG](https://github.com/MILVLG) @ Hangzhou Dianzi University (HDU).  
+## About Us
+
+This project is maintained by the [MILVLG](https://github.com/MILVLG) @ Hangzhou Dianzi University (HDU).
 
 ## Citation
 
-If this code is used in your research, please cite our paper:
+If this work is useful in your research, please cite our papers:
 
 ```bibtex
+
 @InProceedings{Shao_2025_ICCV,
     author    = {Shao, Zhenwei and Wang, Mingyang and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Mao, Ning and Chen, Wei and Yu, Jun},
     title     = {Growing a Twig to Accelerate Large Vision-Language Models},

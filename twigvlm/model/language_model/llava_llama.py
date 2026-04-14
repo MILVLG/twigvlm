@@ -32,8 +32,14 @@ _llama_dir = os.path.join(os.path.dirname(__file__), "llama")
 if twig_stage in (1, 2):
     _model_file = os.path.join(_llama_dir, f"modeling_llama_twig++_stage{twig_stage}.py")
     rank0_print(f"[llava_llama] Loading stage{twig_stage} model from {_model_file}")
-    _spec = importlib.util.spec_from_file_location("modeling_llama_twig", _model_file)
+    _pkg_name = "twigvlm.model.language_model.llama"
+    if _pkg_name not in sys.modules:
+        importlib.import_module(_pkg_name)
+    _mod_name = f"{_pkg_name}.modeling_llama_twig"
+    _spec = importlib.util.spec_from_file_location(_mod_name, _model_file)
     _mod = importlib.util.module_from_spec(_spec)
+    _mod.__package__ = _pkg_name
+    sys.modules[_mod_name] = _mod
     _spec.loader.exec_module(_mod)
     LlamaConfig = _mod.LlamaConfig
     LlamaModel = _mod.LlamaModel

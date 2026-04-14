@@ -78,6 +78,7 @@ class ModelArguments:
     mm_use_im_start_end: bool = field(default=False)
     mm_use_im_patch_token: bool = field(default=True)
     mm_vision_select_feature: Optional[str] = field(default="patch")
+    mm_patch_merge_type: Optional[str] = field(default="flat")
 
 
 @dataclass
@@ -965,17 +966,17 @@ def train():
     model.requires_grad_(False)
 
     for n, p in model.named_parameters():
-            if 'bkb' in n:
-                continue
-            if 'lm_head' in n:
+        if 'bkb' in n:
+            continue
+        if 'lm_head' in n:
+            p.requires_grad = True
+        for layer_i in range(twig_K, twig_K+twig_T):
+            if f'model.layers.{layer_i}' in n:
                 p.requires_grad = True
-            for layer_i in range(twig_K, twig_K+twig_T):
-                if f'model.layers.{layer_i}' in n:
-                    p.requires_grad = True
-            if 'model.norm' in n:
-                p.requires_grad = True
-            if 'leaf' in n:
-                p.requires_grad = True
+        if 'model.norm' in n:
+            p.requires_grad = True
+        if 'leaf' in n:
+            p.requires_grad = True
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)

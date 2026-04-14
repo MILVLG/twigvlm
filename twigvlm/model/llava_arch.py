@@ -25,6 +25,14 @@ from twigvlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PAT
 
 from twigvlm.mm_utils import get_anyres_image_grid_shape
 
+def find_first_index(vec, x):
+    mask = (vec != x)
+    indices = mask.nonzero()
+    
+    if indices.size(0) > 0:  
+        return indices[0].item()  
+    else:
+        return -1  
 
 class LlavaMetaModel:
 
@@ -245,7 +253,9 @@ class LlavaMetaForCausalLM(ABC):
                 cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
                 new_input_embeds.append(cur_input_embeds)
                 new_labels.append(labels[batch_idx])
-                new_image_tags.append(torch.zeros(cur_input_embeds.shape[0], dtype=torch.int32, device=cur_input_embeds.device))
+                cnit = torch.full((cur_input_embeds.shape[0],), -2, dtype=torch.int32, device=cur_input_embeds.device)
+                cnit[find_first_index(labels[batch_idx], -100):] = -3
+                new_image_tags.append(cnit)
                 # new_image_tags.append(torch.where(
                 #     new_labels[-1] == IGNORE_INDEX,  
                 #     torch.full_like(new_labels[-1], -1, dtype=torch.int32, device=cur_input_embeds.device),
@@ -254,7 +264,7 @@ class LlavaMetaForCausalLM(ABC):
                 #     # device=cur_input_embeds.device
                 # ))
                 cur_image_idx += 1
-                continue
+                continue 
             else:
                 pure_text = False
 
@@ -275,7 +285,10 @@ class LlavaMetaForCausalLM(ABC):
             for i in range(num_images + 1):
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
                 cur_new_labels.append(cur_labels_noim[i])
-                cur_new_image_tags.append(torch.full((cur_input_embeds_no_im[i].shape[0],), -(i+1), device=cur_input_embeds_no_im[i].device, dtype=cur_input_embeds_no_im[i].dtype))
+                cnit = torch.full((cur_input_embeds_no_im[i].shape[0],), -(i+1), device=cur_input_embeds_no_im[i].device, dtype=cur_input_embeds_no_im[i].dtype)
+                if i == num_images: # means after last image
+                    cnit[find_first_index(cur_labels_noim[i], -100):] = -(i+2)
+                cur_new_image_tags.append(cnit)
                 if i < num_images:
                     cur_image_features = image_features[cur_image_idx]
                     cur_image_idx += 1
