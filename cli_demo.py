@@ -55,13 +55,11 @@ tokenizer, model, image_processor, context_len = load_pretrained_model(
 )
 
 image_path = args.image_file
-image_path = '/mnt/pfs-mc0p4k/cv/team/wangmingyang/twigvlm-leaf/playground/data/eval/gqa/images/images/n37274.jpg'
 image = load_image(image_path)
 image_tensor = process_images([image], image_processor, model.config)[0]
 # Prepare conversation input
 conv_mode = "vicuna_v1"
-question = "What color is the floor sign in the photo?\nAnswer the question using a single word or phrase."
-# question = input("USER: ")
+question = input("USER: ")
 if not question.strip():
     raise ValueError("Question cannot be empty.")
 question = f"{DEFAULT_IMAGE_TOKEN}\n{question.strip()}"
@@ -100,15 +98,9 @@ model = model.generate(
     image_sizes=image_sizes,
     twigvlm_config=twigvlm_config
 )
-print(model)
+# print(model)
 if not args.stream:
     text_outputs = tokenizer.batch_decode(model.predicted_tokens, skip_special_tokens=True)[0]
     print(text_outputs)
 
 print(f"\nDecoding speed: {model.decoding_tokens_per_second} tokens/s")
-
-# llava 1.5
-# CUDA_VISIBLE_DEVICES=7 python cli_demo.py     --base-model /mnt/pfs-mc0p4k/cv/team/zhenglihao/llm_common/llava-v1.5-7b     --twig-block "/mnt/pfs-mc0p4k/cv/team/wangmingyang/models/Twigv2/shaozw/labs/TwigRL/checkpoints/stage2_0122/TwigVLM-leaf_modv7_7-lr1e-4-dynamic5-attnKL-stage2rl2v5_maxstep500-power2.0-group32-fdrop-fix"     --twig-K 2     --twig-T 3   --image-file "/mnt/pfs-mc0p4k/cv/team/wangmingyang/labs/LLaVA-upload/playground/data/eval/gqa/images/images/n260521.jpg" --R 64
-
-# llava 1.6
-# CUDA_VISIBLE_DEVICES=7 LEAF_MODULE=v7_7 python cli_demo.py     --base-model /mnt/pfs-mc0p4k/cv/team/wangmingyang/models/llava-v1.6-vicuna-7b     --twig-block "/mnt/pfs-mc0p4k/cv/team/wangmingyang/models/Twigv2/shaozw/labs/open_llava_next/checkpoints/TwigVLM-llavanext-leaf_modv7_7-2f-3L-lr1e-4-attnKL_v5_batchmean_b19_a1.0t1.0-predKL2_a0.1t5.0clip4."     --twig-K 2     --twig-T 3   --image-file "./assets/image.png"

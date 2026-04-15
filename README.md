@@ -93,7 +93,7 @@ The trained checkpoint is saved to `./checkpoints/TwigVLM++-stage1-llava1.5-7b-K
 
 ### Stage 2: Pruning Optimization via Reinforcement Learning
 
-You can download stage2 datasets at [here]().
+You can download stage2 datasets at [here](https://awma1-my.sharepoint.com/:u:/g/personal/yuz_l0_tn/IQCoRSIapvkqR4ioPm7CIDHvAUIDxJX1UMjR7cpRJcoQLxU?download=1).
 
 In the second stage, only the **P-Head** parameters are updated via GRPO-style reinforcement learning to directly maximize post-pruning model performance. This stage:
 - Re-uses the SFT dataset from Stage 1 but only needs ~10% of training samples (50K)
