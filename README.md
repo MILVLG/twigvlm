@@ -8,6 +8,10 @@ Compared to existing VLM acceleration methods that are purely based on visual to
 <img src="./assets/fig1.png" alt="TwigVLM" style="width: 100%; min-width: 300px; display: block; margin: auto;">
 </p>
 
+## News
+- [2026/04/15]: 🔥🔥🔥 Stronger and Faster **TwigVLM++** models are released [here](https://github.com/MILVLG/twigvlm/tree/twigvlm%2B%2B).
+- [2025/07/05]: Training and evaluation codes for **TwigVLM** models are released.
+  
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
@@ -18,10 +22,6 @@ Compared to existing VLM acceleration methods that are purely based on visual to
 - [About us](#about-us)
 - [Citation](#citation)
   
-<!-- ## News
-- July 5, 2025: Training and evaluation codes of the `TwigVLM` model are released. -->
-
-
 ## Prerequisites
 0. To train the models, you will need a server with **at least 4 GPUs**, each with **more than 40GB of memory** (e.g., 4×NVIDIA A6000). For inference or testing, **a single GPU with >40GB memory** is sufficient.
 1. Clone this repository and navigate to the folder:
@@ -120,12 +120,19 @@ This project is maintained by the [MILVLG](https://github.com/MILVLG) @ Hangzhou
 If this code is used in your research, please cite our paper:
 
 ```bibtex
-@InProceedings{Shao_2025_ICCV,
+@InProceedings{Shao_2025_twigvlm,
     author    = {Shao, Zhenwei and Wang, Mingyang and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Mao, Ning and Chen, Wei and Yu, Jun},
     title     = {Growing a Twig to Accelerate Large Vision-Language Models},
     booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
     month     = {October},
     year      = {2025},
     pages     = {20064-20074}
+}
+
+@article{shao_2026_twigvlm++,
+    title     = {TwigVLM++: Growing a Multi-head Twig via Distillation and Reinforcement Learning to Accelerate Large Vision-Language Models},
+    author    = {Shao, Zhenwei and Wang, Mingyang and Zhang, Weijun and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Yu, Jun},
+    journal   = {arXiv:2503.14075},
+    year      = {2025}
 }
 ```
