@@ -195,13 +195,10 @@ This project is maintained by the [MILVLG](https://github.com/MILVLG) @ Hangzhou
 If this work is useful in your research, please cite our papers:
 
 ```bibtex
-
-@InProceedings{Shao_2025_ICCV,
-    author    = {Shao, Zhenwei and Wang, Mingyang and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Mao, Ning and Chen, Wei and Yu, Jun},
-    title     = {Growing a Twig to Accelerate Large Vision-Language Models},
-    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
-    month     = {October},
-    year      = {2025},
-    pages     = {20064-20074}
+@article{shao_2026_twigvlm++,
+    title     = {TwigVLM++: Growing a Multi-head Twig via Distillation and Reinforcement Learning to Accelerate Large Vision-Language Models},
+    author    = {Shao, Zhenwei and Wang, Mingyang and Zhang, Weijun and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Yu, Jun},
+    journal   = {arXiv:2503.14075},
+    year      = {2025}
 }
 ```
