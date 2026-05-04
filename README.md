@@ -9,7 +9,7 @@ Compared to existing VLM acceleration methods that are purely based on visual to
 </p>
 
 ## News
-- [2026/04/15]: 🔥🔥🔥 Stronger and Faster **TwigVLM++** are released [here](https://github.com/MILVLG/twigvlm/tree/twigvlm%2B%2B).
+- [2026/04/15]: 🔥🔥🔥 Stronger and Faster **TwigVLM++** are released in the repo's [twigvlm++ branch](https://github.com/MILVLG/twigvlm/tree/twigvlm%2B%2B).
 - [2025/07/05]: Training and evaluation codes for **TwigVLM** models are released.
   
 ## Table of Contents
