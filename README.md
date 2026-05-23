@@ -130,7 +130,7 @@ If this code is used in your research, please cite our paper:
 }
 
 @article{shao_2026_twigvlm++,
-    title     = {TwigVLM++: Growing a Multi-head Twig via Distillation and Reinforcement Learning to Accelerate Large Vision-Language Models},
+    title     = {Growing a Multi-head Twig via Distillation and Reinforcement Learning to Accelerate Large Vision-Language Models},
     author    = {Shao, Zhenwei and Wang, Mingyang and Zhang, Weijun and Yu, Zhou and Pan, Wenwen and Yang, Yan and Wei, Tao and Zhang, Hongyuan and Yu, Jun},
     journal   = {arXiv:2503.14075},
     year      = {2025}
